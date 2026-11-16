@@ -7,17 +7,19 @@ import { NavigationBar } from "expo-navigation-bar";
 import { COLORS, Spinner } from "./src/components/ui";
 import { useStore } from "./src/store/useStore";
 import TasksScreen from "./src/screens/TasksScreen";
+import ChatScreen from "./src/screens/ChatScreen";
 import FocusScreen from "./src/screens/FocusScreen";
 import ReviewScreen from "./src/screens/ReviewScreen";
 
 
-type TabKey = "tasks" | "focus" | "review";
+type TabKey = "tasks" | "chat" | "focus" | "review";
 
 const ACCENT = "#FA6E1E";
 const SUB = "#9C9C9C";
 
 const TABS: { key: TabKey; icon: string; label: string }[] = [
   { key: "tasks", icon: "checkbox-outline", label: "Tasks" },
+  { key: "chat", icon: "chatbubble-ellipses-outline", label: "Chat" },
   { key: "focus", icon: "timer-outline", label: "Focus" },
   { key: "review", icon: "stats-chart-outline", label: "Review" },
 ];
@@ -67,6 +69,7 @@ export default function App() {
           <SafeAreaView style={styles.container}>
             <Animated.View style={[{ flex: 1 }, { opacity: fade }]}>
               {tab === "tasks" && <TasksScreen />}
+              {tab === "chat" && <ChatScreen />}
               {tab === "focus" && <FocusScreen onEnterImmersive={() => setFocusImmersive(true)} />}
               {tab === "review" && <ReviewScreen />}
             </Animated.View>

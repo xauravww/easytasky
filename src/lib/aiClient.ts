@@ -98,6 +98,85 @@ export const suggestNext = async (items: { id: string; title: string }[]): Promi
     .map((s) => ({ id: s.id as string, reason: typeof s.reason === "string" ? s.reason : "" }));
 };
 
+export const chatMessage = async (
+  history: { role: "user" | "assistant"; content: string }[]
+): Promise<string> => {
+  const msgs: Msg[] = [
+    {
+      role: "system",
+      content:
+        "You are EasyTasky's assistant. Be concise and helpful. You can propose tasks (title, quadrant, energy) when useful.",
+    },
+    ...history.map((h) => ({ role: h.role as Msg["role"], content: h.content })),
+  ];
+  return chat(msgs, false);
+};
+
+const decodeChunk = (value: Uint8Array): string => {
+  try {
+    if (typeof TextDecoder !== "undefined") return new TextDecoder().decode(value);
+  } catch {}
+  let s = "";
+  for (let i = 0; i < value.length; i++) s += String.fromCharCode(value[i]);
+  return s;
+};
+
+export const chatStream = async (
+  history: { role: "user" | "assistant"; content: string }[],
+  onDelta: (text: string) => void
+): Promise<string> => {
+  if (!aiEnabled()) throw new Error("AI is not configured");
+  const url = `${CONFIG.baseURL.replace(/\/+$/, "")}/chat/completions`;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (CONFIG.apiKey) headers.Authorization = `Bearer ${CONFIG.apiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: CONFIG.model,
+      temperature: 0.3,
+      stream: true,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are EasyTasky's assistant. Be concise and helpful. You can propose tasks (title, quadrant, energy) when useful.",
+        },
+        ...history.map((h) => ({ role: h.role, content: h.content })),
+      ],
+    }),
+  });
+  if (!res.ok || !res.body) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`AI request failed (${res.status}): ${body}`);
+  }
+  const reader = res.body.getReader();
+  let buf = "";
+  let full = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decodeChunk(value);
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const payload = t.slice(5).trim();
+      if (payload === "[DONE]") continue;
+      try {
+        const j = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
+        const delta = j?.choices?.[0]?.delta?.content;
+        if (typeof delta === "string" && delta) {
+          full += delta;
+          onDelta(delta);
+        }
+      } catch {}
+    }
+  }
+  return full;
+};
+
 export const estimateWithAI = async (title: string, samples: { title: string; minutes: number }[]): Promise<number> => {
   const raw = await chat([
     { role: "system", content: "You estimate task durations in minutes. Respond with JSON only." },
