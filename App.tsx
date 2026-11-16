@@ -1,20 +1,105 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from "react";
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { NavigationBar } from "expo-navigation-bar";
+import { COLORS, Spinner } from "./src/components/ui";
+import { useStore } from "./src/store/useStore";
+import TasksScreen from "./src/screens/TasksScreen";
+import FocusScreen from "./src/screens/FocusScreen";
+import ReviewScreen from "./src/screens/ReviewScreen";
+
+
+type TabKey = "tasks" | "focus" | "review";
+
+const ACCENT = "#FA6E1E";
+const SUB = "#9C9C9C";
+
+const TABS: { key: TabKey; icon: string; label: string }[] = [
+  { key: "tasks", icon: "checkbox-outline", label: "Tasks" },
+  { key: "focus", icon: "timer-outline", label: "Focus" },
+  { key: "review", icon: "stats-chart-outline", label: "Review" },
+];
 
 export default function App() {
+  const ready = useStore((s) => s.ready);
+  const init = useStore((s) => s.init);
+  const [tab, setTab] = useState<TabKey>("tasks");
+  const [focusImmersive, setFocusImmersive] = useState(false);
+  const [fade] = useState(() => new Animated.Value(1));
+
+  useEffect(() => {
+    init();
+  }, [init]);
+
+  const switchTab = (next: TabKey) => {
+    if (next === tab) return;
+    setFocusImmersive(false);
+    setTab(next);
+    fade.setValue(0);
+    Animated.timing(fade, {
+      toValue: 1,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  if (!ready) {
+    return (
+      <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
+        <Spinner />
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider>
+      <StatusBar style={focusImmersive ? "light" : "dark"} />
+      <NavigationBar style={focusImmersive ? "dark" : "light"} hidden={focusImmersive} />
+      <View style={[styles.container, focusImmersive && styles.focusShell]}>
+        {tab === "focus" && focusImmersive ? (
+          <Animated.View style={[{ flex: 1 }, { opacity: fade }]}>
+            <FocusScreen immersive onMinimize={() => setFocusImmersive(false)} />
+          </Animated.View>
+        ) : (
+          <SafeAreaView style={styles.container}>
+            <Animated.View style={[{ flex: 1 }, { opacity: fade }]}>
+              {tab === "tasks" && <TasksScreen />}
+              {tab === "focus" && <FocusScreen onEnterImmersive={() => setFocusImmersive(true)} />}
+              {tab === "review" && <ReviewScreen />}
+            </Animated.View>
+            <View style={styles.tabbar}>
+              {TABS.map((t) => (
+                <Pressable key={t.key} style={styles.tab} onPress={() => switchTab(t.key)}>
+                  <Ionicons
+                    name={t.icon as never}
+                    size={20}
+                    color={tab === t.key ? ACCENT : SUB}
+                  />
+                  <Text style={[styles.tabLabel, tab === t.key && { color: ACCENT, fontWeight: "700" }]}>{t.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </SafeAreaView>
+        )}
+      </View>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  focusShell: { backgroundColor: "#000000" },
+  tabbar: {
+    flexDirection: "row",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#262626",
+    backgroundColor: "#0D0D0D",
+    paddingTop: 6,
+    paddingBottom: 8,
   },
+  tab: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 48, gap: 2 },
+  tabLabel: { fontSize: 10, color: SUB },
 });
