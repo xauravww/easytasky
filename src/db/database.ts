@@ -14,7 +14,11 @@ export type Task = {
   estimated_min: number | null;
   actual_min: number | null;
   timebox_end: number | null;
+  note: string | null;
   is_habit: number;
+  habit_freq: string | null;
+  habit_days: string | null;
+  habit_color: string | null;
 };
 
 export type ActivityLog = {
@@ -40,9 +44,26 @@ export type PomoSession = {
   task_id: string | null;
   focus_min: number;
   break_min: number;
+  focus_sec: number;
+  break_sec: number;
   rounds: number;
   started_at: number;
   completed_at: number | null;
+};
+
+export type HabitCheck = {
+  id: number;
+  habit_id: string;
+  day: string; // YYYY-MM-DD
+};
+
+export type Subtask = {
+  id: string;
+  task_id: string;
+  title: string;
+  done: number;
+  sort: number;
+  created_at: number;
 };
 
 export type DBData = {
@@ -50,6 +71,8 @@ export type DBData = {
   logs: ActivityLog[];
   blocks: TimeBlock[];
   pomos: PomoSession[];
+  habitChecks: HabitCheck[];
+  subtasks: Subtask[];
 };
 
 let db: SQLiteDatabase | null = null;
@@ -71,7 +94,25 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
       estimated_min INTEGER,
       actual_min INTEGER,
       timebox_end INTEGER,
-      is_habit INTEGER DEFAULT 0
+      note TEXT,
+      is_habit INTEGER DEFAULT 0,
+      habit_freq TEXT,
+      habit_days TEXT,
+      habit_color TEXT
+    );
+    CREATE TABLE IF NOT EXISTS habit_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      habit_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      UNIQUE(habit_id, day)
+    );
+    CREATE TABLE IF NOT EXISTS subtasks (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      done INTEGER DEFAULT 0,
+      sort INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS activity_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,6 +135,8 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
       task_id TEXT,
       focus_min INTEGER DEFAULT 25,
       break_min INTEGER DEFAULT 5,
+      focus_sec INTEGER DEFAULT 0,
+      break_sec INTEGER DEFAULT 0,
       rounds INTEGER DEFAULT 1,
       started_at INTEGER NOT NULL,
       completed_at INTEGER
@@ -103,6 +146,29 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
   try {
     await db.execAsync("ALTER TABLE tasks ADD COLUMN is_habit INTEGER DEFAULT 0");
   } catch {}
+  // Migrations for databases created before the habit columns existed.
+  try {
+    await db.execAsync("ALTER TABLE tasks ADD COLUMN habit_freq TEXT");
+  } catch {}
+  try {
+    await db.execAsync("ALTER TABLE tasks ADD COLUMN habit_days TEXT");
+  } catch {}
+  try {
+    await db.execAsync("ALTER TABLE tasks ADD COLUMN habit_color TEXT");
+  } catch {}
+  // Migration for databases created before the note column existed.
+  try {
+    await db.execAsync("ALTER TABLE tasks ADD COLUMN note TEXT");
+  } catch {}
+  // Migrations for databases created before the exact-second session columns.
+  try {
+    await db.execAsync("ALTER TABLE pomodoro_sessions ADD COLUMN focus_sec INTEGER DEFAULT 0");
+  } catch {}
+  try {
+    await db.execAsync("ALTER TABLE pomodoro_sessions ADD COLUMN break_sec INTEGER DEFAULT 0");
+  } catch {}
+  await db.execAsync("CREATE TABLE IF NOT EXISTS habit_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, habit_id TEXT NOT NULL, day TEXT NOT NULL, UNIQUE(habit_id, day))");
+  await db.execAsync("CREATE TABLE IF NOT EXISTS subtasks (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, title TEXT NOT NULL, done INTEGER DEFAULT 0, sort INTEGER DEFAULT 0, created_at INTEGER NOT NULL)");
   await seedIfNeeded(db);
   return db;
 };
@@ -115,8 +181,8 @@ const seedIfNeeded = async (d: SQLiteDatabase): Promise<void> => {
   const today = dayKey();
   const mkTask = (t: Partial<Task> & { title: string }) =>
     d.runAsync(
-      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,is_habit)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,is_habit,habit_freq,habit_days,habit_color)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         uid(),
         t.title,
@@ -130,7 +196,11 @@ const seedIfNeeded = async (d: SQLiteDatabase): Promise<void> => {
         t.estimated_min ?? null,
         t.actual_min ?? null,
         t.timebox_end ?? null,
+        t.note ?? null,
         t.is_habit ?? 0,
+        t.habit_freq ?? null,
+        t.habit_days ?? null,
+        t.habit_color ?? null,
       ]
     );
 
@@ -182,17 +252,46 @@ const seedIfNeeded = async (d: SQLiteDatabase): Promise<void> => {
 
   // A completed pomodoro session for the focus tab.
   await d.runAsync(
-    "INSERT INTO pomodoro_sessions (task_id,focus_min,break_min,rounds,started_at,completed_at) VALUES (?,?,?,?,?,?)",
-    [null, 25, 5, 2, now - 3600000, now]
+    "INSERT INTO pomodoro_sessions (task_id,focus_min,break_min,focus_sec,break_sec,rounds,started_at,completed_at) VALUES (?,?,?,?,?,?,?,?)",
+    [null, 25, 5, 1500, 300, 2, now - 3600000, now]
   );
+
+  // Habits (is_habit tasks) + a few days of check-ins so streaks render on first run.
+  const habits: [string, string, string][] = [
+    ["Apply to jobs", "#E5484D", "weekly"],
+    ["Upsolving DSA", "#4CC3E8", "daily"],
+    ["Audiobook", "#D8B62E", "daily"],
+    ["Daily Vocab/phrase Counts", "#12B76A", "daily"],
+    ["Daily Coding", "#8B5CF6", "daily"],
+  ];
+  const habitIds: string[] = [];
+  for (const [title, color, freq] of habits) {
+    const id = uid();
+    habitIds.push(id);
+    await d.runAsync(
+      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,is_habit,habit_freq,habit_days,habit_color)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, title, "", "medium", null, "habit", null, now, null, null, null, null, null, 1, freq, null, color]
+    );
+  }
+  // Give the first three habits check-ins across the last 5 days (streaks of 3-5).
+  const seedStreaks: [number, number][] = [[1, 5], [2, 4], [3, 3]];
+  for (const [idx, streakLen] of seedStreaks) {
+    for (let back = 0; back < streakLen; back++) {
+      const d2 = new Date(now - back * 86400000);
+      await d.runAsync("INSERT OR IGNORE INTO habit_checks (habit_id, day) VALUES (?,?)", [habitIds[idx], dayKey(d2)]);
+    }
+  }
 };
 
 export const loadAll = async (d: SQLiteDatabase): Promise<DBData> => {
-  const [tasks, logs, blocks, pomos] = await Promise.all([
+  const [tasks, logs, blocks, pomos, habitChecks, subtasks] = await Promise.all([
     d.getAllAsync<Task>("SELECT * FROM tasks ORDER BY created_at DESC"),
     d.getAllAsync<ActivityLog>("SELECT * FROM activity_log ORDER BY at"),
     d.getAllAsync<TimeBlock>("SELECT * FROM time_blocks ORDER BY day, start_min"),
     d.getAllAsync<PomoSession>("SELECT * FROM pomodoro_sessions ORDER BY started_at"),
+    d.getAllAsync<HabitCheck>("SELECT * FROM habit_checks ORDER BY day"),
+    d.getAllAsync<Subtask>("SELECT * FROM subtasks ORDER BY sort, created_at"),
   ]);
-  return { tasks, logs, blocks, pomos };
+  return { tasks, logs, blocks, pomos, habitChecks, subtasks };
 };

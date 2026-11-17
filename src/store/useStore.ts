@@ -1,22 +1,27 @@
 import { create } from "zustand";
 import { getDb, loadAll } from "../db/database";
-import type { ActivityLog, PomoSession, Task, TimeBlock } from "../db/database";
-import { uid } from "../utils/time";
+import type { ActivityLog, HabitCheck, PomoSession, Subtask, Task, TimeBlock } from "../db/database";
+import { dayKey, uid } from "../utils/time";
+import { syncTaskReminders } from "../lib/notifications";
+import { loadAiConfig } from "../lib/aiClient";
 
 export type PomoPhase = "focus" | "break";
+export type PomoMode = "pomodoro" | "stopwatch";
 
 export type PomoState = {
+  mode: PomoMode;
   running: boolean;
   phase: PomoPhase;
   focusMin: number;
   breakMin: number;
   taskId: string;
-  left: number; // displayed remaining seconds
-  totalSec: number; // current phase total seconds
+  left: number; // pomodoro: remaining seconds · stopwatch: elapsed seconds
+  totalSec: number; // pomodoro: current phase total (0 for stopwatch)
   rounds: number;
   accFocusSec: number;
-  endAt: number | null; // epoch ms target for the current phase
-  remainMs: number; // remaining ms (kept across pauses)
+  endAt: number | null; // pomodoro: epoch ms target for the current phase
+  startAt: number | null; // stopwatch: epoch ms the count-up started/resumed from
+  remainMs: number; // pomodoro remaining ms (kept across pauses)
   completing: boolean;
 };
 
@@ -26,11 +31,20 @@ type StoreState = {
   logs: ActivityLog[];
   blocks: TimeBlock[];
   pomos: PomoSession[];
+  habitChecks: HabitCheck[];
+  subtasks: Subtask[];
   pomo: PomoState;
+  focusReq: number;
   init: () => Promise<void>;
+  toggleHabit: (habitId: string, day: string) => Promise<void>;
+  addSubtask: (taskId: string, title: string) => Promise<void>;
+  toggleSubtask: (id: string) => Promise<void>;
+  deleteSubtask: (id: string) => Promise<void>;
   setFocusMin: (n: number) => void;
   setBreakMin: (n: number) => void;
   setTaskId: (id: string) => void;
+  setMode: (m: PomoMode) => void;
+  startFocusFor: (taskId: string) => void;
   startPomo: () => void;
   pausePomo: () => void;
   resetPomo: () => void;
@@ -42,7 +56,7 @@ type StoreState = {
   addBlock: (b: Omit<TimeBlock, "id">) => Promise<void>;
   deleteBlock: (id: number) => Promise<void>;
   addLog: (l: Omit<ActivityLog, "id">) => Promise<void>;
-  completePomo: (focus: number, brk: number, rounds: number, taskId?: string) => Promise<void>;
+  completePomo: (focusSec: number, brkSec: number, rounds: number, taskId?: string) => Promise<void>;
 };
 
 const mapRows = <T,>(rows: T[]): T[] => rows;
@@ -53,9 +67,13 @@ export const useStore = create<StoreState>((set, get) => ({
   logs: [],
   blocks: [],
   pomos: [],
+  habitChecks: [],
+  subtasks: [],
+  focusReq: 0,
   pomo: {
+    mode: "pomodoro" as PomoMode,
     running: false,
-    phase: "focus",
+    phase: "focus" as PomoPhase,
     focusMin: 25,
     breakMin: 5,
     taskId: "",
@@ -64,6 +82,7 @@ export const useStore = create<StoreState>((set, get) => ({
     rounds: 0,
     accFocusSec: 0,
     endAt: null,
+    startAt: null,
     remainMs: 1500 * 1000,
     completing: false,
   },
@@ -89,15 +108,52 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setTaskId: (id) => set({ pomo: { ...get().pomo, taskId: id } }),
 
+  setMode: (m) => {
+    const p = get().pomo;
+    if (p.running || p.mode === m) return;
+    set({
+      pomo: {
+        ...p,
+        mode: m,
+        phase: "focus",
+        left: m === "pomodoro" ? p.focusMin * 60 : 0,
+        totalSec: m === "pomodoro" ? p.focusMin * 60 : 0,
+        remainMs: m === "pomodoro" ? p.focusMin * 60 * 1000 : 0,
+        rounds: 0,
+        accFocusSec: 0,
+        endAt: null,
+        startAt: null,
+        completing: false,
+      },
+    });
+  },
+
+  // Cross-screen trigger: attach the task, bump focusReq so the App shell switches
+  // to the immersive Focus screen, and start the timer if idle.
+  startFocusFor: (taskId) => {
+    const p = get().pomo;
+    set({ pomo: { ...p, taskId }, focusReq: get().focusReq + 1 });
+    if (!p.running) get().startPomo();
+  },
+
   startPomo: () => {
     const p = get().pomo;
     if (p.running) return;
+    if (p.mode === "stopwatch") {
+      set({ pomo: { ...p, running: true, startAt: Date.now() - p.left * 1000, endAt: null } });
+      return;
+    }
     set({ pomo: { ...p, running: true, endAt: Date.now() + p.remainMs } });
   },
 
   pausePomo: () => {
     const p = get().pomo;
     if (!p.running) return;
+    if (p.mode === "stopwatch") {
+      const elapsed = Math.max(0, Math.round((Date.now() - (p.startAt ?? Date.now())) / 1000));
+      set({ pomo: { ...p, running: false, left: elapsed, startAt: null } });
+      return;
+    }
     const remainMs = Math.max(0, (p.endAt ?? 0) - Date.now());
     set({ pomo: { ...p, running: false, remainMs, endAt: null } });
   },
@@ -105,17 +161,19 @@ export const useStore = create<StoreState>((set, get) => ({
   resetPomo: () =>
     set((state) => {
       const f = state.pomo.focusMin;
+      const stopwatch = state.pomo.mode === "stopwatch";
       return {
         pomo: {
           ...state.pomo,
           running: false,
           phase: "focus",
-          left: f * 60,
-          totalSec: f * 60,
-          remainMs: f * 60 * 1000,
+          left: stopwatch ? 0 : f * 60,
+          totalSec: stopwatch ? 0 : f * 60,
+          remainMs: stopwatch ? 0 : f * 60 * 1000,
           rounds: 0,
           accFocusSec: 0,
           endAt: null,
+          startAt: null,
           completing: false,
         },
       };
@@ -123,9 +181,17 @@ export const useStore = create<StoreState>((set, get) => ({
 
   finishPomo: async () => {
     const p = get().pomo;
-    const minutes = Math.round(p.accFocusSec / 60);
-    if (minutes > 0 || p.rounds > 0) {
-      await get().completePomo(p.focusMin, p.breakMin, Math.max(p.rounds, 1), p.taskId || undefined);
+    if (p.mode === "stopwatch") {
+      // Exact seconds — even a few seconds of focus gets logged.
+      if (p.left > 0) {
+        await get().completePomo(p.left, 0, 1, p.taskId || undefined);
+      }
+      get().resetPomo();
+      return;
+    }
+    const focusSec = p.accFocusSec + (p.phase === "focus" ? Math.max(0, p.totalSec - p.left) : 0);
+    if (focusSec > 0 || p.rounds > 0) {
+      await get().completePomo(focusSec, 0, Math.max(p.rounds, 1), p.taskId || undefined);
     }
     get().resetPomo();
   },
@@ -133,6 +199,11 @@ export const useStore = create<StoreState>((set, get) => ({
   tickPomo: () => {
     const p = get().pomo;
     if (!p.running) return;
+    if (p.mode === "stopwatch") {
+      const elapsed = Math.max(0, Math.round((Date.now() - (p.startAt ?? Date.now())) / 1000));
+      if (elapsed !== p.left) set({ pomo: { ...p, left: elapsed } });
+      return;
+    }
     const remain = Math.max(0, Math.round(((p.endAt ?? 0) - Date.now()) / 1000));
     if (remain === p.left && remain > 0) return;
     if (remain <= 0 && !p.completing) {
@@ -163,7 +234,22 @@ export const useStore = create<StoreState>((set, get) => ({
   init: async () => {
     const db = await getDb();
     const data = await loadAll(db);
+    await loadAiConfig();
     set({ ...data, ready: true });
+    void syncTaskReminders(get().tasks);
+  },
+
+  toggleHabit: async (habitId, day) => {
+    const db = await getDb();
+    const existing = get().habitChecks.find((c) => c.habit_id === habitId && c.day === day);
+    if (existing) {
+      await db.runAsync("DELETE FROM habit_checks WHERE habit_id = ? AND day = ?", [habitId, day]);
+      set({ habitChecks: get().habitChecks.filter((c) => !(c.habit_id === habitId && c.day === day)) });
+    } else {
+      await db.runAsync("INSERT OR IGNORE INTO habit_checks (habit_id, day) VALUES (?,?)", [habitId, day]);
+      const checks = await db.getAllAsync<HabitCheck>("SELECT * FROM habit_checks ORDER BY day");
+      set({ habitChecks: mapRows(checks) });
+    }
   },
 
   addTask: async (t) => {
@@ -181,14 +267,19 @@ export const useStore = create<StoreState>((set, get) => ({
       estimated_min: t.estimated_min ?? null,
       actual_min: null,
       timebox_end: t.timebox_end ?? null,
+      note: t.note ?? null,
       is_habit: t.is_habit ?? 0,
+      habit_freq: t.habit_freq ?? null,
+      habit_days: t.habit_days ?? null,
+      habit_color: t.habit_color ?? null,
     };
     await db.runAsync(
-      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,is_habit)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.is_habit]
+      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,is_habit,habit_freq,habit_days,habit_color)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.note, task.is_habit, task.habit_freq, task.habit_days, task.habit_color]
     );
     set({ tasks: [task, ...get().tasks] });
+    void syncTaskReminders(get().tasks);
   },
 
   updateTask: async (id, patch) => {
@@ -197,16 +288,56 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!cur) return;
     const next = { ...cur, ...patch };
     await db.runAsync(
-      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, is_habit=? WHERE id=?`,
-      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.is_habit ?? 0, id]
+      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=? WHERE id=?`,
+      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, id]
     );
     set({ tasks: get().tasks.map((t) => (t.id === id ? next : t)) });
+    void syncTaskReminders(get().tasks);
   },
 
   deleteTask: async (id) => {
     const db = await getDb();
     await db.runAsync("DELETE FROM tasks WHERE id = ?", [id]);
-    set({ tasks: get().tasks.filter((t) => t.id !== id) });
+    await db.runAsync("DELETE FROM habit_checks WHERE habit_id = ?", [id]);
+    await db.runAsync("DELETE FROM subtasks WHERE task_id = ?", [id]);
+    set({
+      tasks: get().tasks.filter((t) => t.id !== id),
+      habitChecks: get().habitChecks.filter((c) => c.habit_id !== id),
+      subtasks: get().subtasks.filter((s) => s.task_id !== id),
+    });
+    void syncTaskReminders(get().tasks);
+  },
+
+  addSubtask: async (taskId, title) => {
+    const db = await getDb();
+    const st: Subtask = {
+      id: uid(),
+      task_id: taskId,
+      title: title.trim(),
+      done: 0,
+      sort: get().subtasks.filter((s) => s.task_id === taskId).length,
+      created_at: Date.now(),
+    };
+    if (!st.title) return;
+    await db.runAsync("INSERT INTO subtasks (id,task_id,title,done,sort,created_at) VALUES (?,?,?,?,?,?)", [
+      st.id, st.task_id, st.title, st.done, st.sort, st.created_at,
+    ]);
+    set({ subtasks: [...get().subtasks, st] });
+  },
+
+  toggleSubtask: async (id) => {
+    const db = await getDb();
+    const cur = get().subtasks.find((s) => s.id === id);
+    if (!cur) return;
+    const done = cur.done ? 0 : 1;
+    await db.runAsync("UPDATE subtasks SET done=? WHERE id=?", [done, id]);
+    set({ subtasks: get().subtasks.map((s) => (s.id === id ? { ...s, done } : s)) });
+  },
+
+  deleteSubtask: async (id) => {
+    const db = await getDb();
+    await db.runAsync("DELETE FROM subtasks WHERE id=?", [id]);
+    set({ subtasks: get().subtasks.filter((s) => s.id !== id) });
   },
 
   addBlock: async (b) => {
@@ -237,18 +368,18 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ logs: mapRows(logs) });
   },
 
-  completePomo: async (focus, brk, rounds, taskId) => {
+  completePomo: async (focusSec, brkSec, rounds, taskId) => {
     const db = await getDb();
     const at = Date.now();
     await db.runAsync(
-      "INSERT INTO pomodoro_sessions (task_id,focus_min,break_min,rounds,started_at,completed_at) VALUES (?,?,?,?,?,?)",
-      [taskId ?? null, focus, brk, rounds, at, at]
+      "INSERT INTO pomodoro_sessions (task_id,focus_min,break_min,focus_sec,break_sec,rounds,started_at,completed_at) VALUES (?,?,?,?,?,?,?,?)",
+      [taskId ?? null, Math.round(focusSec / 60), Math.round(brkSec / 60), Math.round(focusSec), Math.round(brkSec), rounds, at, at]
     );
     if (taskId) {
       const t = get().tasks.find((x) => x.id === taskId);
       if (t) {
         const prev = t.actual_min ?? 0;
-        await get().updateTask(taskId, { actual_min: prev + focus * rounds });
+        await get().updateTask(taskId, { actual_min: prev + Math.round(focusSec / 60) });
       }
     }
     const pomos = await db.getAllAsync<PomoSession>("SELECT * FROM pomodoro_sessions ORDER BY started_at");
@@ -288,6 +419,23 @@ export const estimateForTitle = (tasks: Task[], title: string): number | null =>
   if (matches.length === 0) return null;
   const avg = matches.reduce((s, t) => s + (t.actual_min || 0), 0) / matches.length;
   return Math.round(avg * 1.25);
+};
+
+// Current streak for a habit: consecutive checked days ending today (or yesterday
+// if today is not yet checked — the streak survives until the day actually passes).
+export const habitStreak = (checks: HabitCheck[], habitId: string): number => {
+  const days = new Set(checks.filter((c) => c.habit_id === habitId).map((c) => c.day));
+  const cur = new Date();
+  if (!days.has(dayKey(cur))) {
+    cur.setDate(cur.getDate() - 1);
+    if (!days.has(dayKey(cur))) return 0;
+  }
+  let streak = 0;
+  while (days.has(dayKey(cur))) {
+    streak += 1;
+    cur.setDate(cur.getDate() - 1);
+  }
+  return streak;
 };
 
 // Daily audit aggregate: minutes of logged activity per day for the last `days`.

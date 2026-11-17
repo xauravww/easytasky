@@ -1,0 +1,303 @@
+import React, { useState } from "react";
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { Task } from "../db/database";
+import { fmtDue } from "../utils/taskFormat";
+import { dayKey } from "../utils/time";
+import { useStore } from "../store/useStore";
+
+const SHEET = "#1A1A1A";
+const FIELD_BG = "#1E1E1E";
+const LINE = "#262626";
+const TEXT = "#FFFFFF";
+const SUB = "#9C9C9C";
+const IDLE = "#6F6F6F";
+const ACCENT = "#FA6E1E";
+const TEAL = "#3ECF8E";
+const RED = "#E5484D";
+
+const ENERGY_COLOR: Record<Task["energy"], string> = {
+  high: RED,
+  medium: "#E0A93B",
+  low: "#4CC3E8",
+};
+
+const QUADRANTS = [
+  { key: "urgent_important", label: "Do" },
+  { key: "not_urgent_important", label: "Schedule" },
+  { key: "urgent_not_important", label: "Delegate" },
+  { key: "neither", label: "Eliminate" },
+] as const;
+
+type Props = {
+  task: Task;
+  onClose: () => void;
+};
+
+export default function TaskDetailSheet({ task, onClose }: Props) {
+  const insets = useSafeAreaInsets();
+  const { subtasks, updateTask, deleteTask, addSubtask, toggleSubtask, deleteSubtask, startFocusFor } = useStore();
+
+  const [title, setTitle] = useState(task.title);
+  const [note, setNote] = useState(task.note ?? "");
+  const [quadrant, setQuadrant] = useState(task.quadrant ?? "not_urgent_important");
+  const [energy, setEnergy] = useState<Task["energy"]>(task.energy);
+  const [subInput, setSubInput] = useState("");
+
+  const mine = subtasks.filter((s) => s.task_id === task.id);
+  const doneCount = mine.filter((s) => s.done).length;
+
+  const saveMeta = () => {
+    const trimmed = title.trim();
+    updateTask(task.id, {
+      title: trimmed || task.title,
+      note: note.trim() || null,
+      quadrant,
+      energy,
+    });
+  };
+
+  const submitSub = () => {
+    if (!subInput.trim()) return;
+    addSubtask(task.id, subInput);
+    setSubInput("");
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.scrim} behavior="padding">
+        <Pressable style={{ flex: 1 }} onPress={() => { saveMeta(); onClose(); }} />
+        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+          <View style={styles.grabber} />
+
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            onEndEditing={saveMeta}
+            placeholder="Task title"
+            placeholderTextColor={IDLE}
+            style={styles.titleInput}
+            multiline
+          />
+
+          {(task.due_date || task.actual_min) && (
+            <View style={styles.metaRow}>
+              {task.due_date && (
+                <View style={styles.metaChip}>
+                  <Ionicons name="calendar-outline" size={13} color={task.due_date && task.due_date < dayKey() ? RED : SUB} />
+                  <Text style={styles.metaText}>{fmtDue(task.due_date)}</Text>
+                </View>
+              )}
+              {!!task.actual_min && (
+                <View style={styles.metaChip}>
+                  <Ionicons name="timer-outline" size={13} color={SUB} />
+                  <Text style={styles.metaText}>{task.actual_min}m focused</Text>
+                </View>
+              )}
+              {mine.length > 0 && (
+                <View style={styles.metaChip}>
+                  <Ionicons name="list-outline" size={13} color={SUB} />
+                  <Text style={styles.metaText}>
+                    {doneCount}/{mine.length} subtasks
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <Text style={styles.label}>Notes</Text>
+            <TextInput
+              value={note}
+              onChangeText={setNote}
+              onEndEditing={saveMeta}
+              placeholder="Add details…"
+              placeholderTextColor={IDLE}
+              style={[styles.noteInput]}
+              multiline
+            />
+
+            <Text style={styles.label}>Subtasks</Text>
+            {mine.map((s) => (
+              <View key={s.id} style={styles.subRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.subCheck, s.done ? styles.subCheckDone : null, pressed && { opacity: 0.6 }]}
+                  onPress={() => toggleSubtask(s.id)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: !!s.done }}
+                  accessibilityLabel={`Toggle ${s.title}`}
+                >
+                  {s.done ? <Ionicons name="checkmark" size={13} color="#FFFFFF" /> : null}
+                </Pressable>
+                <Text style={[styles.subTitle, s.done ? { color: SUB, textDecorationLine: "line-through" } : null]} numberOfLines={2}>
+                  {s.title}
+                </Text>
+                <Pressable
+                  style={({ pressed }) => [styles.subDelete, pressed && { opacity: 0.5 }]}
+                  onPress={() => deleteSubtask(s.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete ${s.title}`}
+                >
+                  <Ionicons name="close" size={16} color={IDLE} />
+                </Pressable>
+              </View>
+            ))}
+            <View style={styles.subAddRow}>
+              <TextInput
+                value={subInput}
+                onChangeText={setSubInput}
+                onSubmitEditing={submitSub}
+                placeholder="Add subtask…"
+                placeholderTextColor={IDLE}
+                style={styles.subAddInput}
+                returnKeyType="done"
+              />
+              <Pressable style={({ pressed }) => [styles.subAddBtn, pressed && { opacity: 0.7 }]} onPress={submitSub} accessibilityRole="button" accessibilityLabel="Add subtask">
+                <Ionicons name="add" size={18} color={ACCENT} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.label}>Quadrant</Text>
+            <View style={styles.chipRow}>
+              {QUADRANTS.map((q) => (
+                <Pressable
+                  key={q.key}
+                  style={[styles.chip, quadrant === q.key && styles.chipActive]}
+                  onPress={() => { setQuadrant(q.key); updateTask(task.id, { quadrant: q.key }); }}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.chipText, quadrant === q.key && styles.chipTextActive]}>{q.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.label}>Energy</Text>
+            <View style={styles.chipRow}>
+              {(["low", "medium", "high"] as const).map((e) => (
+                <Pressable
+                  key={e}
+                  style={[styles.chip, energy === e && styles.chipActive]}
+                  onPress={() => { setEnergy(e); updateTask(task.id, { energy: e }); }}
+                  accessibilityRole="button"
+                >
+                  <View style={[styles.energyDot, { backgroundColor: ENERGY_COLOR[e] }]} />
+                  <Text style={[styles.chipText, energy === e && styles.chipTextActive]}>{e}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={styles.divider} />
+
+            <Pressable
+              style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]}
+              onPress={() => { saveMeta(); startFocusFor(task.id); onClose(); }}
+              accessibilityRole="button"
+              accessibilityLabel="Start focus session for this task"
+            >
+              <Ionicons name="play-circle-outline" size={22} color={ACCENT} />
+              <Text style={[styles.actionText, { color: ACCENT, fontWeight: "700" }]}>Start focus</Text>
+            </Pressable>
+            <Pressable
+              style={styles.actionRow}
+              onPress={() => { updateTask(task.id, { status: task.status === "done" ? "inbox" : "done" }); onClose(); }}
+              accessibilityRole="button"
+            >
+              <Ionicons name="checkmark-circle-outline" size={22} color={task.status === "done" ? IDLE : TEAL} />
+              <Text style={styles.actionText}>{task.status === "done" ? "Reopen task" : "Mark done"}</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]}
+              onPress={() => { deleteTask(task.id); onClose(); }}
+              accessibilityRole="button"
+            >
+              <Ionicons name="trash-outline" size={22} color={RED} />
+              <Text style={[styles.actionText, { color: RED }]}>Delete task</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: SHEET,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "90%",
+  },
+  grabber: { alignSelf: "center", width: 36, height: 4, borderRadius: 2, backgroundColor: LINE, marginTop: 10 },
+  titleInput: {
+    color: TEXT,
+    fontSize: 19,
+    fontWeight: "700",
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 6,
+  },
+  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 20, paddingVertical: 6 },
+  metaChip: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: FIELD_BG, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  metaText: { color: SUB, fontSize: 12, fontWeight: "600" },
+  content: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
+  label: { color: SUB, fontSize: 13, fontWeight: "600", marginTop: 14, marginBottom: 8 },
+  noteInput: {
+    backgroundColor: FIELD_BG,
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: 14,
+    color: TEXT,
+    fontSize: 15,
+    lineHeight: 21,
+    padding: 14,
+    minHeight: 76,
+    textAlignVertical: "top",
+  },
+  subRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 },
+  subCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: IDLE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  subCheckDone: { backgroundColor: TEAL, borderColor: TEAL },
+  subTitle: { flex: 1, color: TEXT, fontSize: 15 },
+  subDelete: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
+  subAddRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
+  subAddInput: {
+    flex: 1,
+    backgroundColor: FIELD_BG,
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: 12,
+    color: TEXT,
+    fontSize: 15,
+    paddingHorizontal: 14,
+    minHeight: 44,
+  },
+  subAddBtn: { width: 44, height: 44, borderRadius: 12, borderWidth: 1.5, borderColor: ACCENT, alignItems: "center", justifyContent: "center" },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    minHeight: 38,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: LINE,
+    backgroundColor: FIELD_BG,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  chipActive: { borderColor: ACCENT, backgroundColor: "rgba(250,110,30,0.12)" },
+  chipText: { color: "#D6D6D6", fontSize: 13, fontWeight: "600" },
+  chipTextActive: { color: ACCENT },
+  energyDot: { width: 8, height: 8, borderRadius: 4 },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: LINE, marginVertical: 14 },
+  actionRow: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 13 },
+  actionText: { color: TEXT, fontSize: 16 },
+});

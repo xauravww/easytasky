@@ -4,8 +4,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "../store/useStore";
 import { dayKey } from "../utils/time";
+import { fmtDue } from "../utils/taskFormat";
 import type { Task } from "../db/database";
 import { aiEnabled, parseTaskToForm } from "../lib/aiClient";
+import TaskDetailSheet from "../components/TaskDetailSheet";
 
 const BG = "#141414";
 const SEARCH_BG = "#2E2E2E";
@@ -13,7 +15,6 @@ const CIRCLE = "#6F6F6F";
 const TAB_IDLE = "#9E9E9E";
 const RED = "#EA5A47";
 const ACCENT = "#FA6E1E";
-const TEAL = "#3ECF8E";
 const AMBER = "#E0A93B";
 const SHEET = "#1A1A1A";
 const LINE = "#262626";
@@ -25,25 +26,15 @@ const ENERGY_COLOR: Record<Task["energy"], string> = {
 };
 
 const QUADRANTS = [
-  { key: "urgent_important", label: "Do", icon: "flash", color: RED },
-  { key: "not_urgent_important", label: "Schedule", icon: "calendar", color: TEAL },
-  { key: "urgent_not_important", label: "Delegate", icon: "people", color: AMBER },
-  { key: "neither", label: "Eliminate", icon: "trash", color: TAB_IDLE },
+  { key: "urgent_important", label: "Do" },
+  { key: "not_urgent_important", label: "Schedule" },
+  { key: "urgent_not_important", label: "Delegate" },
+  { key: "neither", label: "Eliminate" },
 ] as const;
-
-const fmtDue = (key: string) => {
-  const today = dayKey();
-  if (key === today) return "Today";
-  const d = new Date(key + "T00:00:00");
-  const diff = Math.round((d.getTime() - Date.now()) / 86400000);
-  if (diff === 1) return "Tomorrow";
-  if (diff < 0) return `${-diff}d overdue`;
-  return `${diff}d`;
-};
 
 export default function TasksScreen() {
   const insets = useSafeAreaInsets();
-  const { tasks, addTask, updateTask, deleteTask } = useStore();
+  const { tasks, addTask, updateTask } = useStore();
 
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -51,13 +42,10 @@ export default function TasksScreen() {
   const [quadrant, setQuadrant] = useState("urgent_important");
   const [energy, setEnergy] = useState<Task["energy"]>("medium");
   const [editing, setEditing] = useState<Task | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editQuadrant, setEditQuadrant] = useState<string>("not_urgent_important");
-  const [editEnergy, setEditEnergy] = useState<Task["energy"]>("medium");
   const [parsing, setParsing] = useState(false);
   const [parseErr, setParseErr] = useState("");
 
-  const open = useMemo(() => tasks.filter((t) => t.status !== "done"), [tasks]);
+  const open = useMemo(() => tasks.filter((t) => t.status !== "done" && t.status !== "habit"), [tasks]);
   const matched = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? open.filter((t) => t.title.toLowerCase().includes(q)) : open;
@@ -90,18 +78,7 @@ export default function TasksScreen() {
   };
 
   const openEdit = (t: Task) => {
-    setEditTitle(t.title);
-    setEditQuadrant(t.quadrant ?? "not_urgent_important");
-    setEditEnergy(t.energy);
     setEditing(t);
-  };
-
-  const saveEdit = () => {
-    if (!editing) return;
-    const trimmed = editTitle.trim();
-    if (!trimmed) return;
-    updateTask(editing.id, { title: trimmed, quadrant: editQuadrant, energy: editEnergy });
-    setEditing(null);
   };
 
   const runParse = async () => {
@@ -121,18 +98,23 @@ export default function TasksScreen() {
   };
 
   const renderRow = (t: Task, showDue: boolean) => {
-    const selected = false;
     return (
       <Pressable
         key={t.id}
         style={styles.row}
         onPress={() => openEdit(t)}
         accessibilityRole="button"
+        accessibilityLabel={`Open ${t.title}`}
       >
         <View style={[styles.energyBar, { backgroundColor: ENERGY_COLOR[t.energy] }]} />
-        <View style={styles.circle}>
-          {selected && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
-        </View>
+        <Pressable
+          style={({ pressed }) => [styles.circle, pressed && { opacity: 0.5 }]}
+          onPress={() => updateTask(t.id, { status: "done" })}
+          hitSlop={8}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: false }}
+          accessibilityLabel={`Complete ${t.title}`}
+        />
         <Text style={styles.rowTitle} numberOfLines={1}>{t.title}</Text>
         {showDue && t.due_date ? (
           <Text style={[styles.due, t.due_date < dayKey() && { color: RED }]}>{fmtDue(t.due_date)}</Text>
@@ -243,66 +225,7 @@ export default function TasksScreen() {
         </View>
       </Modal>
 
-      <Modal visible={!!editing} transparent animationType="slide" onRequestClose={() => setEditing(null)}>
-        <View style={styles.scrim}>
-          <Pressable style={{ flex: 1 }} onPress={() => setEditing(null)} />
-          <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-            <Text style={styles.sheetTitle} numberOfLines={1}>Edit task</Text>
-            <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
-              <TextInput
-                value={editTitle}
-                onChangeText={setEditTitle}
-                placeholder="Task title"
-                placeholderTextColor={TAB_IDLE}
-                style={styles.input}
-              />
-              <Text style={styles.fieldLabel}>Quadrant</Text>
-              <View style={styles.chipRow}>
-                {QUADRANTS.map((q) => (
-                  <Pressable
-                    key={q.key}
-                    style={[styles.chip, editQuadrant === q.key && styles.chipActive]}
-                    onPress={() => setEditQuadrant(q.key)}
-                    accessibilityRole="button"
-                  >
-                    <Text style={[styles.chipText, editQuadrant === q.key && styles.chipTextActive]}>{q.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-              <Text style={styles.fieldLabel}>Energy</Text>
-              <View style={styles.chipRow}>
-                {(["low", "medium", "high"] as const).map((e) => (
-                  <Pressable
-                    key={e}
-                    style={[styles.chip, editEnergy === e && styles.chipActive]}
-                    onPress={() => setEditEnergy(e)}
-                    accessibilityRole="button"
-                  >
-                    <Text style={[styles.chipText, editEnergy === e && styles.chipTextActive]}>{e}</Text>
-                  </Pressable>
-                ))}
-              </View>
-              <Pressable style={styles.submit} onPress={saveEdit} accessibilityRole="button">
-                <Text style={styles.submitText}>Save</Text>
-              </Pressable>
-
-              <View style={styles.editDivider} />
-              <Pressable style={styles.sheetRow} onPress={() => { if (editing) updateTask(editing.id, { status: "done" }); setEditing(null); }} accessibilityRole="button">
-                <Ionicons name="checkmark-circle-outline" size={22} color={TEAL} />
-                <Text style={styles.sheetRowText}>Mark done</Text>
-              </Pressable>
-              <Pressable style={styles.sheetRow} onPress={() => { if (editing) updateTask(editing.id, { is_habit: editing.is_habit ? 0 : 1 }); setEditing(null); }} accessibilityRole="button">
-                <Ionicons name={editing?.is_habit ? "repeat" : "repeat-outline"} size={22} color={ACCENT} />
-                <Text style={styles.sheetRowText}>{editing?.is_habit ? "Remove from habits" : "Mark as habit"}</Text>
-              </Pressable>
-              <Pressable style={styles.sheetRow} onPress={() => { if (editing) deleteTask(editing.id); setEditing(null); }} accessibilityRole="button">
-                <Ionicons name="trash-outline" size={22} color={RED} />
-                <Text style={[styles.sheetRowText, { color: RED }]}>Delete</Text>
-              </Pressable>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      {editing && <TaskDetailSheet task={editing} onClose={() => setEditing(null)} />}
     </View>
   );
 }

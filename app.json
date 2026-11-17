@@ -24,7 +24,13 @@
     },
     "plugins": [
       "expo-sqlite",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "color": "#FA6E1E"
+        }
+      ]
     ]
   }
 }

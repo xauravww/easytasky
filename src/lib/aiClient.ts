@@ -1,6 +1,7 @@
-// OpenAI-compatible client. Set CONFIG below (or override from your environment).
-// NOTE: never commit a real API key. Use a placeholder here and inject the real
-// value at build/runtime (e.g. via an env or a local, git-ignored file).
+// OpenAI-compatible client. Config is user-supplied at runtime (Chat › settings gear)
+// and persisted in AsyncStorage — never hardcode a real key here.
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export type AIConfig = {
   baseURL: string;
@@ -8,13 +9,47 @@ export type AIConfig = {
   model: string;
 };
 
-export const CONFIG: AIConfig = {
-  baseURL: "https://api.inceptionlabs.ai/v1",
-  apiKey: "",
-  model: "mercury-3-preview-1014",
-};
+const STORAGE_KEY = "@easytasky/ai-config";
+
+let CONFIG: AIConfig = { baseURL: "", apiKey: "", model: "" };
+
+export const getAiConfig = (): AIConfig => CONFIG;
 
 export const aiEnabled = (): boolean => !!CONFIG.baseURL && !!CONFIG.model;
+
+export const loadAiConfig = async (): Promise<void> => {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (raw) CONFIG = { ...CONFIG, ...(JSON.parse(raw) as Partial<AIConfig>) };
+  } catch (err) {
+    console.warn("loadAiConfig failed", err);
+  }
+};
+
+export const saveAiConfig = async (next: Partial<AIConfig>): Promise<void> => {
+  CONFIG = { ...CONFIG, ...next };
+  try {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ baseURL: CONFIG.baseURL, apiKey: CONFIG.apiKey, model: CONFIG.model }));
+  } catch (err) {
+    console.warn("saveAiConfig failed", err);
+  }
+};
+
+export const clearAiConfig = async (): Promise<void> => {
+  CONFIG = { baseURL: "", apiKey: "", model: "" };
+  try {
+    await AsyncStorage.removeItem(STORAGE_KEY);
+  } catch (err) {
+    console.warn("clearAiConfig failed", err);
+  }
+};
+
+// Minimal live request to validate the user's settings; resolves with the reply
+// text or throws with the provider's error.
+export const testAiConnection = async (): Promise<string> => {
+  const raw = await chat([{ role: "user", content: "Reply with the word: ready" }], false);
+  return raw.trim().slice(0, 120);
+};
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
 

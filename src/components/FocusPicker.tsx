@@ -55,25 +55,22 @@ export default function FocusPicker({
   const [overdueOpen, setOverdueOpen] = useState(true);
 
 
-  const open = useMemo(() => tasks.filter((t) => t.status !== "done"), [tasks]);
+  const open = useMemo(() => tasks.filter((t) => t.status !== "done" && t.status !== "habit"), [tasks]);
+  const habits = useMemo(() => tasks.filter((t) => t.is_habit === 1), [tasks]);
   const matched = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? open.filter((t) => t.title.toLowerCase().includes(q)) : open;
-  }, [open, query]);
+    const byTitle = (t: Task) => t.title.toLowerCase().includes(q);
+    return q ? { tasks: open.filter(byTitle), habits: habits.filter(byTitle) } : { tasks: open, habits };
+  }, [open, habits, query]);
 
   const groups = useMemo(() => {
     const today = dayKey();
-    const overdue = matched.filter((t) => t.due_date && t.due_date < today);
-    const todayList = matched.filter((t) => t.due_date === today);
-    const upcoming = matched.filter((t) => t.due_date && t.due_date > today);
-    const noDate = matched.filter((t) => !t.due_date);
+    const overdue = matched.tasks.filter((t) => t.due_date && t.due_date < today);
+    const todayList = matched.tasks.filter((t) => t.due_date === today);
+    const upcoming = matched.tasks.filter((t) => t.due_date && t.due_date > today);
+    const noDate = matched.tasks.filter((t) => !t.due_date);
     return { overdue, todayList, upcoming, noDate };
   }, [matched]);
-
-  const habits = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return (q ? open.filter((t) => t.title.toLowerCase().includes(q)) : open).filter((t) => t.is_habit === 1);
-  }, [open, query]);
 
   const pick = (id: string) => {
     onSelect(selectedId === id ? "" : id);
@@ -165,13 +162,13 @@ export default function FocusPicker({
               </>
             )}
 
-            {matched.length === 0 && <Text style={styles.empty}>No matching tasks</Text>}
+            {matched.tasks.length === 0 && <Text style={styles.empty}>No matching tasks</Text>}
           </ScrollView>
         ) : (
           <ScrollView contentContainerStyle={styles.list}>
             <Text style={styles.sectionText}>HABITS</Text>
-            {habits.map((t) => renderRow(t, false))}
-            {habits.length === 0 && <Text style={styles.empty}>No habits yet</Text>}
+            {matched.habits.map((t) => renderRow(t, false))}
+            {matched.habits.length === 0 && <Text style={styles.empty}>No habits yet</Text>}
           </ScrollView>
         )}
       </View>

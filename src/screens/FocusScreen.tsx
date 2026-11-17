@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Rect } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioPlayer } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "../store/useStore";
+import { dayKey } from "../utils/time";
 import TimerSheet from "../components/TimerSheet";
 
 const BG = "#000000";
@@ -16,8 +17,14 @@ const TICK_COUNT = 60;
 const SNAKE_LEN = 11; // lit band length (visual-only, does not affect time)
 const TICK_INDICES = Array.from({ length: TICK_COUNT }, (_, i) => i);
 
-const fmtClock = (s: number) =>
-  `${`${Math.floor(s / 60)}`.padStart(2, "0")} : ${`${s % 60}`.padStart(2, "0")}`;
+const fmtClock = (s: number) => {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = `${m}`.padStart(h > 0 ? 2 : 2, "0");
+  const ss = `${sec}`.padStart(2, "0");
+  return h > 0 ? `${h} : ${mm} : ${ss}` : `${mm} : ${ss}`;
+};
 
 export default function FocusScreen({
   onMinimize,
@@ -30,10 +37,27 @@ export default function FocusScreen({
 }) {
   const pomo = useStore((s) => s.pomo);
   const tasks = useStore((s) => s.tasks);
+  const pomos = useStore((s) => s.pomos);
   const startPomo = useStore((s) => s.startPomo);
   const pausePomo = useStore((s) => s.pausePomo);
   const finishPomo = useStore((s) => s.finishPomo);
+  const setMode = useStore((s) => s.setMode);
   const selectedTask = tasks.find((t) => t.id === pomo.taskId);
+
+  // Today's completed focus time, exact to the second (TickTick-style mini counter).
+  const todayFocus = useMemo(() => {
+    const today = dayKey();
+    const sec = pomos
+      .filter((p) => p.completed_at && dayKey(new Date(p.completed_at)) === today)
+      .reduce((sum, p) => sum + (p.focus_sec ?? Math.round(p.focus_min * 60)), 0);
+    if (sec <= 0) return null;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}h ${m > 0 ? `${m}m` : ""}`.trim();
+    if (m > 0) return `${m}m ${s > 0 ? `${s}s` : ""}`.trim();
+    return `${s}s`;
+  }, [pomos]);
 
   const insets = useSafeAreaInsets();
   const lastTap = useRef(0);
@@ -70,19 +94,32 @@ export default function FocusScreen({
     };
   }, [noise]);
 
-  const { running, phase, left, totalSec } = pomo;
+  const { running, phase, left, totalSec, mode } = pomo;
   const inBreak = phase === "break";
 
   // The snake rotates one full lap per minute (60 ticks / 60s), independent of the
-  // session length. Seconds remain accurate (stored/engine-driven).
-  const elapsedInSession = Math.max(0, totalSec - left);
+  // session length. For the stopwatch, left is elapsed seconds — each minute is a lap.
+  const elapsedInSession = mode === "stopwatch" ? left : Math.max(0, totalSec - left);
   const secondOfMinute = elapsedInSession % 60;
   const totalElapsedTicks = (secondOfMinute / 60) * TICK_COUNT;
 
   const { width: winW } = useWindowDimensions();
   const size = Math.min(winW - 84, 276);
   const c = size / 2;
-  const statusLabel = inBreak ? "Break" : running ? "Focusing" : elapsedInSession > 0 ? "Paused" : "Ready";
+  const statusLabel =
+    mode === "stopwatch"
+      ? running
+        ? "Stopwatch"
+        : left > 0
+          ? "Paused"
+          : "Ready"
+      : inBreak
+        ? "Break"
+        : running
+          ? "Focusing"
+          : elapsedInSession > 0
+            ? "Paused"
+            : "Ready";
 
   return (
     <View style={styles.root}>
@@ -114,6 +151,26 @@ export default function FocusScreen({
           </Text>
         </View>
       )}
+
+      {/* Mode switcher — locked while a session is running */}
+      <View style={styles.modeRow}>
+        {(["pomodoro", "stopwatch"] as const).map((m) => (
+          <Pressable
+            key={m}
+            style={[styles.modeChip, mode === m && styles.modeChipActive]}
+            onPress={() => setMode(m)}
+            disabled={running}
+            accessibilityRole="button"
+            accessibilityState={{ selected: mode === m }}
+            accessibilityLabel={`${m} mode`}
+          >
+            <Ionicons name={m === "pomodoro" ? "timer-outline" : "stopwatch-outline"} size={15} color={mode === m ? ACCENT : "#8A8A8A"} />
+            <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
+              {m === "pomodoro" ? "Pomodoro" : "Stopwatch"}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
 
       <View style={styles.middle}>
         <Pressable onPress={handleDialTap} style={{ width: size, height: size }} accessibilityRole="button" accessibilityLabel="Timer">
@@ -163,6 +220,10 @@ export default function FocusScreen({
             <Ionicons name="stop" size={26} color="#B8B8B8" />
           </Pressable>
         </View>
+
+        <Text style={styles.todayText}>
+          {todayFocus ? `Today · ${todayFocus} focused` : "No focus time yet today"}
+        </Text>
       </View>
 
       <TimerSheet visible={sheet} onClose={() => setSheet(false)} />
@@ -194,6 +255,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   taskChipText: { color: "#D6D6D6", fontSize: 12, textAlign: "center" },
+  modeRow: {
+    flexDirection: "row",
+    alignSelf: "center",
+    backgroundColor: "#141414",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#262626",
+    padding: 3,
+    marginBottom: 10,
+  },
+  modeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
+  modeChipActive: { backgroundColor: "rgba(250,110,30,0.14)" },
+  modeText: { color: "#8A8A8A", fontSize: 13, fontWeight: "600" },
+  modeTextActive: { color: ACCENT, fontWeight: "700" },
   middle: { flex: 1, alignItems: "center", justifyContent: "center" },
   dialCenter: {
     position: "absolute",
@@ -206,6 +288,7 @@ const styles = StyleSheet.create({
   },
   timer: { color: "#FFFFFF", fontWeight: "300", fontVariant: ["tabular-nums"], letterSpacing: 1 },
   status: { color: DIM, fontSize: 17, marginTop: 8 },
+  todayText: { color: "#7A7A7A", fontSize: 13, fontWeight: "500", marginTop: 18 },
   controls: { flexDirection: "row", alignItems: "center", gap: 28, marginTop: 36 },
   sideBtn: {
     width: 64,

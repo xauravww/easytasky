@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { aiEnabled, chatStream, CONFIG } from "../lib/aiClient";
+import Markdown from "react-native-markdown-display";
+import { aiEnabled, chatStream, getAiConfig } from "../lib/aiClient";
+import SettingsModal from "../components/SettingsModal";
 
 const BG = "#141414";
 const BUBBLE_ME = "#FA6E1E";
@@ -74,6 +76,8 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);
+  const [settings, setSettings] = useState(false);
+  const [aiReady, setAiReady] = useState(aiEnabled());
 
   const send = async () => {
     const text = input.trim();
@@ -85,7 +89,7 @@ export default function ChatScreen() {
     setTyping(true);
     try {
       if (!aiEnabled()) {
-        throw new Error("AI not configured — set baseURL/model in src/lib/aiClient.ts");
+        throw new Error("AI not configured — tap the gear above to add your API settings.");
       }
       let acc = "";
       await chatStream(next, (delta) => {
@@ -105,8 +109,16 @@ export default function ChatScreen() {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.h1}>AI Chat</Text>
-          <Text style={styles.headerSub}>{aiEnabled() ? CONFIG.model : "not configured"}</Text>
+          <Text style={styles.headerSub}>{aiReady ? getAiConfig().model : "not configured"}</Text>
         </View>
+        <Pressable
+          style={styles.clearBtn}
+          onPress={() => setSettings(true)}
+          accessibilityRole="button"
+          accessibilityLabel="AI settings"
+        >
+          <Ionicons name="settings-outline" size={18} color={SUB} />
+        </Pressable>
         {messages.length > 1 && (
           <Pressable
             style={styles.clearBtn}
@@ -134,12 +146,17 @@ export default function ChatScreen() {
             key={i}
             style={[styles.bubble, m.role === "user" ? styles.bubbleMe : styles.bubbleAi]}
           >
-            <Text style={m.role === "user" ? styles.textMe : styles.textAi}>{m.content}</Text>
+            {m.role === "user" ? (
+              <Text style={styles.textMe}>{m.content}</Text>
+            ) : (
+              <Markdown style={mdStyles}>{m.content}</Markdown>
+            )}
           </View>
         ))}
         {typing && <TypingIndicator />}
       </ScrollView>
 
+      {settings && <SettingsModal onClose={() => setSettings(false)} onSaved={() => setAiReady(aiEnabled())} />}
       <View style={[styles.inputRow, { paddingBottom: Math.max(keyboardH - 56, 8) }]}>
         <TextInput
           value={input}
@@ -158,6 +175,27 @@ export default function ChatScreen() {
     </View>
   );
 }
+
+const mdStyles = {
+  body: { color: TEXT, fontSize: 15, lineHeight: 22 },
+  heading1: { color: TEXT, fontSize: 20, fontWeight: "700", marginVertical: 6 },
+  heading2: { color: TEXT, fontSize: 18, fontWeight: "700", marginVertical: 6 },
+  heading3: { color: TEXT, fontSize: 16, fontWeight: "700", marginVertical: 4 },
+  paragraph: { marginVertical: 4 },
+  strong: { color: TEXT, fontWeight: "700" },
+  em: { fontStyle: "italic" },
+  s: { textDecorationLine: "line-through" },
+  link: { color: BUBBLE_ME },
+  code_inline: { backgroundColor: "#000000", color: "#F8F8F2", fontFamily: "monospace", paddingHorizontal: 4, borderRadius: 4 },
+  code_block: { backgroundColor: "#000000", color: "#F8F8F2", fontFamily: "monospace", padding: 12, borderRadius: 8, marginVertical: 6 },
+  fence: { backgroundColor: "#000000", padding: 12, borderRadius: 8, marginVertical: 6 },
+  blockquote: { backgroundColor: "#1A1A1A", borderLeftWidth: 3, borderLeftColor: BUBBLE_ME, paddingHorizontal: 10, paddingVertical: 4, marginVertical: 4 },
+  bullet_list: { marginVertical: 2 },
+  ordered_list: { marginVertical: 2 },
+  list_item: { flexDirection: "row", alignItems: "flex-start", marginVertical: 2 },
+  hr: { backgroundColor: LINE, height: 1, marginVertical: 8 },
+  table: { borderWidth: 1, borderColor: LINE },
+};
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },

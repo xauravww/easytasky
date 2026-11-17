@@ -43,33 +43,37 @@ export default function TimerSheet({ visible, onClose }: Props) {
           </View>
 
           <ScrollView contentContainerStyle={styles.content}>
-            <Text style={styles.sectionLabel}>Focus length</Text>
-            <View style={styles.chipRow}>
-              {FOCUS_OPTIONS.map((f) => (
-                <Pressable
-                  key={f}
-                  style={[styles.chip, pomo.focusMin === f && styles.chipActive]}
-                  onPress={() => setFocusMin(f)}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.chipText, pomo.focusMin === f && styles.chipTextActive]}>{f}m</Text>
-                </Pressable>
-              ))}
-            </View>
+            {pomo.mode === "pomodoro" && (
+              <>
+                <Text style={styles.sectionLabel}>Focus length</Text>
+                <View style={styles.chipRow}>
+                  {FOCUS_OPTIONS.map((f) => (
+                    <Pressable
+                      key={f}
+                      style={[styles.chip, pomo.focusMin === f && styles.chipActive]}
+                      onPress={() => setFocusMin(f)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={[styles.chipText, pomo.focusMin === f && styles.chipTextActive]}>{f}m</Text>
+                    </Pressable>
+                  ))}
+                </View>
 
-            <Text style={styles.sectionLabel}>Break length</Text>
-            <View style={styles.chipRow}>
-              {BREAK_OPTIONS.map((b) => (
-                <Pressable
-                  key={b}
-                  style={[styles.chip, pomo.breakMin === b && styles.chipActive]}
-                  onPress={() => setBreakMin(b)}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.chipText, pomo.breakMin === b && styles.chipTextActive]}>{b}m</Text>
-                </Pressable>
-              ))}
-            </View>
+                <Text style={styles.sectionLabel}>Break length</Text>
+                <View style={styles.chipRow}>
+                  {BREAK_OPTIONS.map((b) => (
+                    <Pressable
+                      key={b}
+                      style={[styles.chip, pomo.breakMin === b && styles.chipActive]}
+                      onPress={() => setBreakMin(b)}
+                      accessibilityRole="button"
+                    >
+                      <Text style={[styles.chipText, pomo.breakMin === b && styles.chipTextActive]}>{b}m</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
 
             <Text style={styles.sectionLabel}>Attach a task</Text>
             <Pressable style={styles.taskRow} onPress={() => setPicker(true)} accessibilityRole="button">

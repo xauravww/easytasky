@@ -10,9 +10,10 @@ import TasksScreen from "./src/screens/TasksScreen";
 import ChatScreen from "./src/screens/ChatScreen";
 import FocusScreen from "./src/screens/FocusScreen";
 import ReviewScreen from "./src/screens/ReviewScreen";
+import HabitsScreen from "./src/screens/HabitsScreen";
 
 
-type TabKey = "tasks" | "chat" | "focus" | "review";
+type TabKey = "tasks" | "chat" | "focus" | "habits" | "review";
 
 const ACCENT = "#FA6E1E";
 const SUB = "#9C9C9C";
@@ -21,6 +22,7 @@ const TABS: { key: TabKey; icon: string; label: string }[] = [
   { key: "tasks", icon: "checkbox-outline", label: "Tasks" },
   { key: "chat", icon: "chatbubble-ellipses-outline", label: "Chat" },
   { key: "focus", icon: "timer-outline", label: "Focus" },
+  { key: "habits", icon: "flame-outline", label: "Habits" },
   { key: "review", icon: "stats-chart-outline", label: "Review" },
 ];
 
@@ -34,6 +36,18 @@ export default function App() {
   useEffect(() => {
     init();
   }, [init]);
+
+  // "Start focus" from anywhere (e.g. task detail) → jump to immersive Focus.
+  useEffect(
+    () =>
+      useStore.subscribe((s, prev) => {
+        if (s.focusReq !== prev.focusReq && s.focusReq > 0) {
+          setTab("focus");
+          setFocusImmersive(true);
+        }
+      }),
+    []
+  );
 
   const switchTab = (next: TabKey) => {
     if (next === tab) return;
@@ -71,6 +85,7 @@ export default function App() {
               {tab === "tasks" && <TasksScreen />}
               {tab === "chat" && <ChatScreen />}
               {tab === "focus" && <FocusScreen onEnterImmersive={() => setFocusImmersive(true)} />}
+              {tab === "habits" && <HabitsScreen />}
               {tab === "review" && <ReviewScreen />}
             </Animated.View>
             <View style={styles.tabbar}>
