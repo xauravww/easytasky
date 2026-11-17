@@ -5,8 +5,6 @@ Status legend: `[ ]` planned · `[~]` in progress · `[x]` done.
 ## Core features
 
 - [x] **Recurring tasks** — daily / weekly / monthly repeat on normal tasks. On completion, auto-create the next instance. Foundation already exists in habits; generalize it. *Priority: high — biggest TickTick signature.*
-- [ ] **Calendar view** — month grid (Review tab) showing tasks per day + focus-intensity heat strip.
-- [x] **Exact due time + time-based reminders** — we store date-only; add time-of-day so reminders fire at a precise time (not just 09:00).
 - [ ] **Smart "next best task" card** — surface `suggestNext` (aiClient) as a "Focus on this" suggestion on the Tasks/Today screen.
 - [ ] **Per-task focus summary chip** — show total `actual_min` and a small timer chip on each task row.
 
