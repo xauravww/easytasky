@@ -57,7 +57,7 @@ function TypingIndicator() {
   );
 }
 
-export default function ChatScreen() {
+export default function AgentScreen() {
   const listRef = useRef<any>(null);
   const [keyboardH, setKeyboardH] = useState(0);
 
@@ -71,7 +71,7 @@ export default function ChatScreen() {
   }, []);
 
   const [messages, setMessages] = useState<Msg[]>([
-    { role: "assistant", content: "Hi! Ask me anything, or I can draft tasks for you." },
+    { role: "assistant", content: "Hi, I'm your agent. Ask me to plan, draft tasks, or estimate — or just chat." },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -108,7 +108,7 @@ export default function ChatScreen() {
     <View style={styles.root}>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.h1}>AI Chat</Text>
+          <Text style={styles.h1}>Agent</Text>
           <Text style={styles.headerSub}>{aiReady ? getAiConfig().model : "not configured"}</Text>
         </View>
         <Pressable
@@ -123,7 +123,7 @@ export default function ChatScreen() {
           <Pressable
             style={styles.clearBtn}
             onPress={() => {
-              setMessages([{ role: "assistant", content: "Hi! Ask me anything, or I can draft tasks for you." }]);
+              setMessages([{ role: "assistant", content: "Hi, I'm your agent. Ask me to plan, draft tasks, or estimate — or just chat." }]);
               setTyping(false);
               setBusy(false);
             }}

@@ -7,7 +7,7 @@ import { NavigationBar } from "expo-navigation-bar";
 import { COLORS, Spinner } from "./src/components/ui";
 import { useStore } from "./src/store/useStore";
 import TasksScreen from "./src/screens/TasksScreen";
-import ChatScreen from "./src/screens/ChatScreen";
+import AgentScreen from "./src/screens/AgentScreen";
 import FocusScreen from "./src/screens/FocusScreen";
 import ReviewScreen from "./src/screens/ReviewScreen";
 import HabitsScreen from "./src/screens/HabitsScreen";
@@ -20,7 +20,7 @@ const SUB = "#9C9C9C";
 
 const TABS: { key: TabKey; icon: string; label: string }[] = [
   { key: "tasks", icon: "checkbox-outline", label: "Tasks" },
-  { key: "chat", icon: "chatbubble-ellipses-outline", label: "Chat" },
+  { key: "chat", icon: "chatbubble-ellipses-outline", label: "Agent" },
   { key: "focus", icon: "timer-outline", label: "Focus" },
   { key: "habits", icon: "flame-outline", label: "Habits" },
   { key: "review", icon: "stats-chart-outline", label: "Review" },
@@ -83,7 +83,7 @@ export default function App() {
           <SafeAreaView style={styles.container}>
             <Animated.View style={[{ flex: 1 }, { opacity: fade }]}>
               {tab === "tasks" && <TasksScreen />}
-              {tab === "chat" && <ChatScreen />}
+              {tab === "chat" && <AgentScreen />}
               {tab === "focus" && <FocusScreen onEnterImmersive={() => setFocusImmersive(true)} />}
               {tab === "habits" && <HabitsScreen />}
               {tab === "review" && <ReviewScreen />}

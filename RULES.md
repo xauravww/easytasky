@@ -134,10 +134,10 @@ Habits are tasks with `is_habit: 1`, `status: "habit"`, plus `habit_freq` ("dail
 
 ## AI integration (OpenAI-compatible)
 
-- Client lives in `src/lib/aiClient.ts` (uses the native `fetch`, no extra deps). **Config is user-supplied at runtime** — Chat › gear opens `SettingsModal` (base URL, model, optional API key with visibility toggle, Test connection), persisted to AsyncStorage (`@easytasky/ai-config`) and loaded during store `init`. Never hardcode credentials in source.
+- Client lives in `src/lib/aiClient.ts` (uses the native `fetch`, no extra deps). **Config is user-supplied at runtime** — the Agent tab's gear opens `SettingsModal` (base URL, model, optional API key with visibility toggle, Test connection), persisted to AsyncStorage (`@easytasky/ai-config`) and loaded during store `init`. Never hardcode credentials in source.
 - `aiEnabled()` is true only when base URL + model are set (local endpoints like Ollama need no key). All AI features must fail gracefully (fall back to heuristics) when disabled.
 - Components read config via `getAiConfig()` (not a snapshot import) and re-check `aiEnabled()` after the settings modal saves.
-- Available: `parseTaskToForm` (Tasks "Parse with AI" — button only renders when enabled), `suggestNext`, `estimateWithAI`, `chatStream` (Chat), `testAiConnection` (settings sheet).
+- Available: `parseTaskToForm` (Tasks "Parse with AI" — button only renders when enabled), `suggestNext`, `estimateWithAI`, `chatStream` (Agent tab), `testAiConnection` (settings sheet).
 - Keys live in plaintext AsyncStorage — device-local by design; acceptable for a personal app, flag the tradeoff if this ever ships to stores.
 
 ## Product rules (the 13 time-management techniques)
