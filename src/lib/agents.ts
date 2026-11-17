@@ -18,6 +18,21 @@ export type AgentDef = {
 // Add new agents by appending to this array.
 const agents: AgentDef[] = [
   {
+    id: "help",
+    aliases: ["?"],
+    description: "list agents & usage",
+    run: async (ctx) => {
+      const lines = agents.filter((a) => a.id !== "help").map((a) => `- \`/${a.id}\` (${a.aliases.join(", ")}): ${a.description}`);
+      return [
+        "**Agents** run locally on a slash/at trigger — no API call needed.",
+        "",
+        ...lines,
+        "",
+        "Try: `/help`, `/draft buy groceries`, `@draft review PR`.",
+      ].join("\n");
+    },
+  },
+  {
     id: "draft",
     aliases: ["task", "add"],
     description: "quickly add a task",
