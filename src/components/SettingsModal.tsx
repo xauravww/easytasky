@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { clearAiConfig, getAiConfig, saveAiConfig, testAiConnection } from "../lib/aiClient";
-import { getHeyGenKey, saveHeyGenKey } from "../lib/talk";
+import { getHeyGenKey, getSelectedVoice, getSpeechLang, saveHeyGenKey, saveVoiceSettings, VOICE_OPTIONS } from "../lib/talk";
 import { useStore } from "../store/useStore";
 
 const BG = "#161616";
@@ -31,6 +31,8 @@ export default function SettingsModal({ onClose, onSaved }: Props) {
   const setProfileStore = useStore((s) => s.setProfile);
   const [heygen, setHeygen] = useState(() => getHeyGenKey());
   const [showHeygen, setShowHeygen] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState(() => getSelectedVoice());
+  const [speechLang, setSpeechLang] = useState(() => getSpeechLang());
 
   const saveProfile = () => {
     setProfileStore(profile);
@@ -39,6 +41,7 @@ export default function SettingsModal({ onClose, onSaved }: Props) {
   const save = async () => {
     await saveAiConfig({ baseURL: baseURL.trim(), apiKey: apiKey.trim(), model: model.trim() });
     await saveHeyGenKey(heygen);
+    await saveVoiceSettings(selectedVoice, speechLang);
     onSaved();
     onClose();
   };
@@ -118,6 +121,34 @@ export default function SettingsModal({ onClose, onSaved }: Props) {
               <Pressable style={styles.eye} onPress={() => setShowHeygen((v) => !v)} accessibilityRole="button" accessibilityLabel="Toggle HeyGen key visibility">
                 <Ionicons name={showHeygen ? "eye-off-outline" : "eye-outline"} size={20} color={SUB} />
               </Pressable>
+            </View>
+
+            <Text style={styles.label}>Voice & Language</Text>
+            <View style={styles.voiceOptions}>
+              {VOICE_OPTIONS.map((opt) => {
+                const isSelected = selectedVoice === opt.id;
+                return (
+                  <Pressable
+                    key={opt.id}
+                    style={[styles.voiceItem, isSelected && styles.voiceItemSelected]}
+                    onPress={() => {
+                      setSelectedVoice(opt.id);
+                      setSpeechLang(opt.lang);
+                    }}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons
+                      name={isSelected ? "radio-button-on" : "radio-button-off"}
+                      size={18}
+                      color={isSelected ? ACCENT : SUB}
+                      style={{ marginRight: 8 }}
+                    />
+                    <Text style={[styles.voiceItemText, isSelected && styles.voiceItemTextSelected]}>
+                      {opt.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
 
             <Text style={styles.label}>Base URL</Text>
@@ -220,6 +251,20 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   keyRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  voiceOptions: { marginTop: 4, gap: 8 },
+  voiceItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: FIELD_BG,
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  voiceItemSelected: { borderColor: ACCENT },
+  voiceItemText: { color: SUB, fontSize: 14, fontWeight: "500" },
+  voiceItemTextSelected: { color: TEXT, fontWeight: "700" },
   labelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   expandBtn: { paddingVertical: 4, paddingHorizontal: 8 },
   expandText: { color: ACCENT, fontSize: 13, fontWeight: "700" },

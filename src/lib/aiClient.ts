@@ -17,6 +17,15 @@ export const getAiConfig = (): AIConfig => CONFIG;
 
 export const aiEnabled = (): boolean => !!CONFIG.baseURL && !!CONFIG.model;
 
+// Pre-warm TCP/TLS connection to the AI endpoint when Call Mode opens
+export const prewarmAiSession = (): void => {
+  if (!CONFIG.baseURL) return;
+  fetch(`${CONFIG.baseURL.replace(/\/+$/, "")}/models`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${CONFIG.apiKey}` },
+  }).catch(() => {});
+};
+
 // One-shot completion with a custom system prompt (used by agents).
 export const aiChatSystem = async (system: string, user: string): Promise<string> => {
   return chat([{ role: "system", content: system }, { role: "user", content: user }], false);

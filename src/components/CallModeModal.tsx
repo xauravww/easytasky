@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { startVoice, stopVoice, synthesizeSpeechStream } from "../lib/talk";
+import { startVoice, stopVoice, synthesizeSpeech, prewarmTalkSession } from "../lib/talk";
+import { prewarmAiSession } from "../lib/aiClient";
 import { createAudioPlayer } from "expo-audio";
-import { File, Paths } from "expo-file-system";
 
 const BG = "#000000";
 const TEXT = "#FFFFFF";
@@ -24,17 +24,35 @@ export default function CallModeModal({ onSend, onClose }: Props) {
   const [error, setError] = useState("");
   const [transcript, setTranscript] = useState("");
   const [live, setLive] = useState("");
+  const [diag, setDiag] = useState("");
   const onSendRef = useRef(onSend);
   const cancelledRef = useRef(false);
+  const interruptRef = useRef<(() => void) | null>(null);
   const playerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
 
   useEffect(() => {
     onSendRef.current = onSend;
   }, [onSend]);
 
-  // Run the bidirectional loop until the call ends.
+  const interruptSpeaking = () => {
+    if (interruptRef.current) {
+      interruptRef.current();
+      interruptRef.current = null;
+    }
+    try {
+      playerRef.current?.pause();
+      playerRef.current?.release();
+    } catch {}
+    playerRef.current = null;
+    setStatus("Listening…");
+  };
+
   useEffect(() => {
     cancelledRef.current = false;
+    // Pre-warm connections so the first response avoids cold handshake lag
+    prewarmAiSession();
+    prewarmTalkSession();
+
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(orb, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -43,120 +61,164 @@ export default function CallModeModal({ onSend, onClose }: Props) {
     );
     loop.start();
 
-    const LISTEN_MS = 9000;
-    const TIMEOUT_MS = 3000;
+    const queue: string[] = [];
+    let processing = false;
+    let wake: (() => void) | null = null;
 
-    // Native recognition: stream partial words live, then finalize on result.
-    const listenOnce = () =>
-      new Promise<string>((resolve, reject) => {
-        let settled = false;
-        const finish = (text: string) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          setLive("");
-          resolve(text);
-        };
-        const fail = (message: string) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          setLive("");
-          reject(new Error(message));
-        };
-        const timer = setTimeout(() => fail("No speech recognized"), LISTEN_MS);
-        startVoice({
-          onPartial: (text) => setLive(text),
-          onResult: (text) => finish(text),
-          onError: (message) => fail(message),
-        }).catch((e: Error) => fail(e.message));
-        // Safety: also stop after the window even if result never arrives.
-        setTimeout(() => {
-          if (!settled) stopVoice().catch(() => {});
-        }, LISTEN_MS + TIMEOUT_MS);
-      });
+    const wakeLoop = () => {
+      if (wake) wake();
+    };
 
-    const playBytes = (bytes: Uint8Array) =>
-      new Promise<void>(async (resolve) => {
-        const file = new File(Paths.cache, `speech-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`);
-        try {
-          const writer = file.writableStream().getWriter();
-          await writer.write(bytes);
-          await writer.close();
-        } catch {}
-        const player = createAudioPlayer(file.uri);
-        playerRef.current = player;
-        const timer = setTimeout(() => resolve(), 30000);
-        player.addListener("playbackStatusUpdate", (s: { didJustFinish?: boolean }) => {
-          if (s.didJustFinish) {
-            clearTimeout(timer);
+    const onUtterance = (text: string) => {
+      interruptSpeaking();
+      queue.push(text);
+      wakeLoop();
+    };
+
+    const playAudioUrl = (url: string) =>
+      new Promise<void>((resolve) => {
+        let finished = false;
+        const done = () => {
+          if (!finished) {
+            finished = true;
             resolve();
           }
-        });
-        player.play();
+        };
+
+        interruptRef.current = done;
+
+        try {
+          const player = createAudioPlayer(url);
+          playerRef.current = player;
+          const timer = setTimeout(() => done(), 45000);
+          player.addListener("playbackStatusUpdate", (s: { didJustFinish?: boolean }) => {
+            if (s.didJustFinish) {
+              clearTimeout(timer);
+              done();
+            }
+          });
+          player.play();
+        } catch {
+          done();
+        }
       });
 
     const speak = async (reply: string) => {
       setStatus("Speaking…");
-      for await (const chunk of synthesizeSpeechStream(reply)) {
+      try {
+        const audioUrl = await synthesizeSpeech(reply);
         if (cancelledRef.current) return;
-        await playBytes(chunk);
+        await playAudioUrl(audioUrl);
+      } catch (err: any) {
+        if (!cancelledRef.current) {
+          setError(err.message || "Failed to speak response");
+        }
+      } finally {
+        try {
+          playerRef.current?.release();
+        } catch {}
+        playerRef.current = null;
+        interruptRef.current = null;
+        if (!cancelledRef.current) {
+          setStatus("Listening…");
+        }
       }
-      try {
-        playerRef.current?.release();
-      } catch {}
-      playerRef.current = null;
     };
 
-    const turn = async (): Promise<boolean> => {
-      if (cancelledRef.current) return false;
-      setStatus("Listening…");
-      setError("");
-      let text = "";
-      try {
-        text = await listenOnce();
-      } catch (e) {
-        if (cancelledRef.current) return false;
-        setStatus("Error");
-        setError(e instanceof Error ? e.message : "Speech not recognized");
-        return false;
-      }
-      if (cancelledRef.current || !text.trim()) return !cancelledRef.current;
-      setTranscript((prev) => `${prev}\nYou: ${text.trim()}`);
-      let reply = "";
-      try {
-        reply = await onSendRef.current(text.trim());
-      } catch (e) {
-        if (cancelledRef.current) return false;
-        reply = e instanceof Error ? e.message : "Sorry, I couldn't respond.";
-      }
-      if (cancelledRef.current) return false;
-      setTranscript((prev) => `${prev}\nAgent: ${reply}`);
-      try {
-        await speak(reply);
-      } catch (e) {
-        if (cancelledRef.current) return false;
-        setStatus("Error");
-        setError(e instanceof Error ? e.message : "Could not speak reply");
-        return false;
-      }
-      return !cancelledRef.current;
+    const beginListening = () => {
+      if (cancelledRef.current) return;
+      startVoice({
+        onStart: () => setDiag("recognizer started"),
+        onEnd: () => {
+          setDiag((d) => `${d} → ended`);
+        },
+        onPartial: (text) => {
+          setDiag((d) => `${d} → partial`);
+          setLive(text);
+          if (processing) {
+            interruptSpeaking();
+          }
+        },
+        onResult: (text) => {
+          setDiag((d) => `${d} → result: "${text.slice(0, 40)}"`);
+          setLive("");
+          onUtterance(text);
+        },
+        onError: (message) => {
+          setDiag((d) => `${d} → error: ${message}`);
+          // On idle timeout / no-speech, recover gracefully with a short breathing pause
+          if (!cancelledRef.current && !processing) {
+            setTimeout(() => {
+              if (!cancelledRef.current && !processing) {
+                beginListening();
+              }
+            }, 600);
+          } else if (!processing) {
+            setStatus("Error");
+            setError(message);
+          }
+        },
+      }).catch((e: Error) => {
+        setDiag((d) => `${d} → start FAILED: ${e.message}`);
+        if (!cancelledRef.current && !processing) {
+          setTimeout(() => {
+            if (!cancelledRef.current && !processing) {
+              beginListening();
+            }
+          }, 1000);
+        } else if (!processing) {
+          setStatus("Error");
+          setError(e.message);
+        }
+      });
     };
 
-    (async () => {
+    beginListening();
+
+    const worker = (async () => {
       while (!cancelledRef.current) {
-        const again = await turn();
-        if (!again) break;
+        if (processing) {
+          await new Promise<void>((r) => {
+            wake = r;
+          });
+          continue;
+        }
+        const text = queue.shift();
+        if (!text) {
+          await new Promise<void>((r) => {
+            wake = r;
+          });
+          continue;
+        }
+        processing = true;
+        // Keep listening ready after speaking
+        if (cancelledRef.current) break;
+        setStatus("Thinking…");
+        setError("");
+        setTranscript((prev) => `${prev}\nYou: ${text.trim()}`);
+        let reply = "";
+        try {
+          reply = await onSendRef.current(text.trim());
+        } catch (e) {
+          reply = e instanceof Error ? e.message : "Sorry, I couldn't respond.";
+        }
+        if (cancelledRef.current) break;
+        setTranscript((prev) => `${prev}\nAgent: ${reply}`);
+        await speak(reply);
+        processing = false;
+        if (!cancelledRef.current) {
+          beginListening();
+        }
       }
     })();
+    void worker;
 
     return () => {
       cancelledRef.current = true;
+      if (wake) wake();
       loop.stop();
+      interruptSpeaking();
       stopVoice().catch(() => {});
-      try {
-        playerRef.current?.release();
-      } catch {}
     };
   }, [orb]);
 
@@ -168,7 +230,16 @@ export default function CallModeModal({ onSend, onClose }: Props) {
       <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <Text style={styles.title}>Agent call</Text>
 
-        <View style={styles.orbArea}>
+        <Pressable
+          style={styles.orbArea}
+          onPress={() => {
+            if (status === "Speaking…") {
+              interruptSpeaking();
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={status === "Speaking…" ? "Tap to interrupt speaking" : "Microphone active"}
+        >
           <Animated.View style={[styles.orbHalo, { transform: [{ scale }], opacity }]} />
           <View style={styles.orbCore}>
             {status === "Error" ? (
@@ -179,10 +250,17 @@ export default function CallModeModal({ onSend, onClose }: Props) {
               <Ionicons name="mic" size={48} color={BG} />
             )}
           </View>
-        </View>
+        </Pressable>
 
         <Text style={styles.status}>{status}</Text>
+        {status === "Speaking…" ? (
+          <Pressable style={styles.tapInterruptBtn} onPress={interruptSpeaking} accessibilityRole="button">
+            <Ionicons name="hand-right" size={16} color={ACCENT_ORB} style={{ marginRight: 6 }} />
+            <Text style={styles.tapInterruptText}>Tap anywhere to interrupt</Text>
+          </Pressable>
+        ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {diag ? <Text style={styles.diag}>{diag}</Text> : null}
 
         <View style={styles.transcriptBox}>
           {live ? (
@@ -219,7 +297,20 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
   },
   status: { color: TEXT, fontSize: 22, fontWeight: "700" },
+  tapInterruptBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(250,110,30,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(250,110,30,0.4)",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginTop: 8,
+  },
+  tapInterruptText: { color: ACCENT_ORB, fontSize: 13, fontWeight: "600" },
   error: { color: RED, fontSize: 14, textAlign: "center", marginTop: 8, paddingHorizontal: 16 },
+  diag: { color: SUB, fontSize: 11, textAlign: "center", marginTop: 6, paddingHorizontal: 16 },
   transcriptBox: { alignSelf: "stretch", backgroundColor: "#111111", borderRadius: 16, padding: 16, minHeight: 130, maxHeight: 220, justifyContent: "flex-start" },
   liveLabel: { color: ACCENT_ORB, fontSize: 12, fontWeight: "700", marginBottom: 4 },
   transcript: { color: TEXT, fontSize: 14, lineHeight: 21 },

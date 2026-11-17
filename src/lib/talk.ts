@@ -1,25 +1,44 @@
-// Talk mode: HeyGen TTS (speech out) + native on-device speech recognition
-// (@react-native-voice/voice) for speech in. The HeyGen API key is user-supplied
+// Talk mode: HeyGen TTS (streaming speech out) + expo-speech-recognition
+// (speech in, works on the new architecture). The HeyGen API key is user-supplied
 // at runtime (never hardcoded) and stored in AsyncStorage.
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Voice from "@react-native-voice/voice";
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 import { getAiConfig } from "./aiClient";
 
 const HEYGEN_STORAGE_KEY = "@easytasky/heygen-key";
+const HEYGEN_VOICE_STORAGE_KEY = "@easytasky/heygen-voice";
+const HEYGEN_LANG_STORAGE_KEY = "@easytasky/heygen-lang";
+
 const HEYGEN_TTS_URL = "https://api.heygen.com/v3/models/audio/tts";
 const HEYGEN_TTS_STREAM_URL = "https://api.heygen.com/v3/models/audio/tts/stream";
-const HEYGEN_VOICE = "83548de556df48ba8c09c42a57c51d85"; // Nadine (public)
+
+export const VOICE_OPTIONS = [
+  { id: "232a89926fca44fc9c8ba2e0f90064f4", name: "Kavya (Indian English / Hindi)", lang: "hi-IN" },
+  { id: "4e79dcb0af2c4d07a5bf5db075884257", name: "Araj (Indian Male)", lang: "hi-IN" },
+  { id: "f03273ea4c5b42d2ad8d05065747a217", name: "Peppy Priya (Indian Friendly)", lang: "hi-IN" },
+  { id: "83548de556df48ba8c09c42a57c51d85", name: "Nadine (Global English)", lang: "en-US" },
+];
+
+const DEFAULT_VOICE = "232a89926fca44fc9c8ba2e0f90064f4"; // Kavya (Indian)
 const HEYGEN_MODEL = "heygen-voice-1-turbo-free";
 
 let heygenKey = "";
+let selectedVoiceId = DEFAULT_VOICE;
+let selectedSpeechLang = "hi-IN";
 
 export const loadHeyGenKey = async (): Promise<void> => {
   try {
     heygenKey = (await AsyncStorage.getItem(HEYGEN_STORAGE_KEY)) ?? "";
+    const savedVoice = await AsyncStorage.getItem(HEYGEN_VOICE_STORAGE_KEY);
+    if (savedVoice) selectedVoiceId = savedVoice;
+    const savedLang = await AsyncStorage.getItem(HEYGEN_LANG_STORAGE_KEY);
+    if (savedLang) selectedSpeechLang = savedLang;
   } catch {}
 };
 
 export const getHeyGenKey = (): string => heygenKey;
+export const getSelectedVoice = (): string => selectedVoiceId;
+export const getSpeechLang = (): string => selectedSpeechLang;
 
 export const saveHeyGenKey = async (key: string): Promise<void> => {
   heygenKey = key.trim();
@@ -29,7 +48,30 @@ export const saveHeyGenKey = async (key: string): Promise<void> => {
   } catch {}
 };
 
+export const saveVoiceSettings = async (voiceId: string, lang?: string): Promise<void> => {
+  selectedVoiceId = voiceId;
+  const opt = VOICE_OPTIONS.find((v) => v.id === voiceId);
+  if (lang) {
+    selectedSpeechLang = lang;
+  } else if (opt) {
+    selectedSpeechLang = opt.lang;
+  }
+  try {
+    await AsyncStorage.setItem(HEYGEN_VOICE_STORAGE_KEY, selectedVoiceId);
+    await AsyncStorage.setItem(HEYGEN_LANG_STORAGE_KEY, selectedSpeechLang);
+  } catch {}
+};
+
 export const talkEnabled = (): boolean => !!heygenKey && !!getAiConfig().baseURL;
+
+// Pre-warm TCP/TLS connection to HeyGen when Call Mode is opened
+export const prewarmTalkSession = (): void => {
+  if (!heygenKey) return;
+  fetch(HEYGEN_TTS_URL, {
+    method: "HEAD",
+    headers: { "X-Api-Key": heygenKey },
+  }).catch(() => {});
+};
 
 // ---- Text to Speech (HeyGen): returns an audio URL to play ----
 export const synthesizeSpeech = async (text: string): Promise<string> => {
@@ -39,9 +81,9 @@ export const synthesizeSpeech = async (text: string): Promise<string> => {
     headers: { "Content-Type": "application/json", "X-Api-Key": heygenKey },
     body: JSON.stringify({
       model: HEYGEN_MODEL,
-      voice_id: HEYGEN_VOICE,
+      voice_id: selectedVoiceId,
       text: text.slice(0, 10000),
-      language: "en",
+      language: selectedSpeechLang.startsWith("hi") ? "hi" : "en",
     }),
   });
   if (!res.ok) {
@@ -66,9 +108,9 @@ export const synthesizeSpeechStream = async function* (
     headers: { "Content-Type": "application/json", "X-Api-Key": heygenKey, Accept: "text/event-stream" },
     body: JSON.stringify({
       model: HEYGEN_MODEL,
-      voice_id: HEYGEN_VOICE,
+      voice_id: selectedVoiceId,
       text: text.slice(0, 10000),
-      language: "en",
+      language: selectedSpeechLang.startsWith("hi") ? "hi" : "en",
     }),
   });
   if (!res.ok || !res.body) {
@@ -90,7 +132,7 @@ export const synthesizeSpeechStream = async function* (
       const payload = t.slice(5).trim();
       if (payload === "[DONE]") continue;
       try {
-        const j = JSON.parse(payload) as { type?: string; audio?: string; part_index?: number; detail?: string };
+        const j = JSON.parse(payload) as { type?: string; audio?: string; detail?: string };
         if (j.type === "error") throw new Error(j.detail ?? "HeyGen stream error");
         if (j.audio) {
           const bytes = Uint8Array.from(atob(j.audio), (c) => c.charCodeAt(0));
@@ -103,52 +145,76 @@ export const synthesizeSpeechStream = async function* (
   }
 };
 
-// ---- Speech to Text (native on-device recognition) ----
+// ---- Speech to Text (expo-speech-recognition) ----
 export type VoiceListener = {
   onResult: (text: string) => void;
   onPartial?: (text: string) => void;
+  onStart?: () => void;
+  onEnd?: () => void;
   onError: (message: string) => void;
 };
 
-let voiceStarted = false;
+let started = false;
 let currentListener: VoiceListener | null = null;
 
-Voice.onSpeechPartialResults = (e) => {
-  const text = (e.value ?? []).join(" ").trim();
-  if (text && currentListener?.onPartial) currentListener.onPartial(text);
-};
-
-Voice.onSpeechResults = (e) => {
-  const text = (e.value ?? []).join(" ").trim();
-  if (text && currentListener) currentListener.onResult(text);
-};
-
-Voice.onSpeechError = (e) => {
-  const message = e.error?.message ?? e.error?.code ?? "Speech recognition error";
-  if (currentListener) currentListener.onError(message);
-};
-
 export const startVoice = async (listener: VoiceListener): Promise<void> => {
-  if (voiceStarted) return;
   currentListener = listener;
-  await Voice.start("en-US");
-  voiceStarted = true;
+  if (started) return;
+  const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+  if (!perm.granted) {
+    listener.onError("Microphone/speech permission not granted");
+    return;
+  }
+  try {
+    ExpoSpeechRecognitionModule.start({
+      lang: selectedSpeechLang || "hi-IN",
+      interimResults: true,
+      continuous: false,
+    });
+    started = true;
+  } catch (err: any) {
+    started = false;
+    throw err;
+  }
 };
 
 export const stopVoice = async (): Promise<string | null> => {
-  if (!voiceStarted) return null;
   try {
-    await Voice.stop();
+    ExpoSpeechRecognitionModule.stop();
   } catch {}
-  voiceStarted = false;
+  started = false;
   currentListener = null;
   return null;
 };
 
 export const destroyVoice = async (): Promise<void> => {
   try {
-    await Voice.destroy();
+    ExpoSpeechRecognitionModule.abort();
   } catch {}
-  voiceStarted = false;
+  started = false;
   currentListener = null;
 };
+
+// Wire the module's native events to the current listener.
+ExpoSpeechRecognitionModule.addListener("start", () => {
+  started = true;
+  currentListener?.onStart?.();
+});
+ExpoSpeechRecognitionModule.addListener("end", () => {
+  started = false;
+  currentListener?.onEnd?.();
+});
+ExpoSpeechRecognitionModule.addListener("result", (event) => {
+  const text = event.results?.[0]?.transcript ?? "";
+  if (!text || !currentListener) return;
+  if (event.isFinal) {
+    currentListener.onResult(text.trim());
+  } else if (currentListener.onPartial) {
+    currentListener.onPartial(text.trim());
+  }
+});
+ExpoSpeechRecognitionModule.addListener("error", (event) => {
+  started = false;
+  const message = event.message || event.error || "Speech recognition error";
+  currentListener?.onError(message);
+});
