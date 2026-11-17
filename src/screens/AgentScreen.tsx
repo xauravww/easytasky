@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import Markdown from "react-native-markdown-display";
-import { aiEnabled, chatStream, getAiConfig } from "../lib/aiClient";
-import { findAgent, listAgents, parseInvocation, runAgent } from "../lib/agents";
+import { aiEnabled, chatWithTools, getAiConfig } from "../lib/aiClient";
+import { describeProposal, helpText, listAgents, parseInvocation, proposalsFromToolCalls } from "../lib/agents";
+import type { BlockProposal } from "../lib/agents";
 import { useStore } from "../store/useStore";
+import { dayKey } from "../utils/time";
 import SettingsModal from "../components/SettingsModal";
 
 const BG = "#141414";
@@ -74,67 +77,149 @@ export default function AgentScreen() {
   }, []);
 
   const [messages, setMessages] = useState<Msg[]>([
-    { role: "assistant", content: "Hi, I'm your agent. Ask me to plan, draft tasks, or estimate — or just chat." },
+    { role: "assistant", content: "Hi, I'm your agent. Ask me to plan, draft tasks, or estimate. Or just chat." },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);
   const [settings, setSettings] = useState(false);
   const [aiReady, setAiReady] = useState(aiEnabled());
+  const [pending, setPending] = useState<{ proposals: BlockProposal[] } | null>(null);
 
   // Show agent suggestions while typing "/" or "@".
   const invHint = input.startsWith("/") || input.startsWith("@") ? listAgents() : [];
 
-  const send = async () => {
-    const text = input.trim();
-    if (!text || busy) return;
-    const inv = parseInvocation(text);
-    const next: Msg[] = [...messages, { role: "user", content: text }];
+  const buildContext = (): string => {
+    const state = useStore.getState();
+    const today = dayKey();
+    const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
+    const openTasks = state.tasks.filter((t) => t.status !== "done" && t.status !== "habit");
+    const todayBlocks = state.blocks.filter((b) => b.day === today).sort((a, b) => a.start_min - b.start_min);
+    const parts: string[] = [];
+    parts.push("This is the user's CURRENT ACTUAL data. It is authoritative — do not invent or describe anything missing from it.");
+    if (openTasks.length) {
+      const shown = openTasks.slice(0, 12).map((t) => `- ${t.title}${t.due_date ? ` (due ${t.due_date})` : ""}`);
+      parts.push(`Open tasks:\n${shown.join("\n")}`);
+    }
+    if (todayBlocks.length) {
+      const shown = todayBlocks.map((b) => `- ${fmt24(b.start_min)}-${fmt24(b.end_min)} ${b.label} (${b.type})`);
+      parts.push(`Today's time blocks:\n${shown.join("\n")}`);
+    } else {
+      parts.push("Today's time blocks: (none)");
+    }
+    return parts.join("\n\n");
+  };
+
+  const approve = async () => {
+    if (!pending || busy) return;
+    setBusy(true);
+    try {
+      const state = useStore.getState();
+      const applied: string[] = [];
+      const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
+      for (const p of pending.proposals) {
+        if (p.kind === "addBlock") {
+          await state.addBlock(p.block);
+          applied.push(`added "${p.block.label}" ${fmt24(p.block.start_min)}-${fmt24(p.block.end_min)}`);
+        } else if (p.kind === "updateBlock") {
+          const b = state.blocks.find((x) => x.id === p.id);
+          await state.updateBlock(p.id, p.patch);
+          applied.push(`updated "${b?.label ?? "#" + p.id}"`);
+        } else if (p.kind === "deleteBlock") {
+          const b = state.blocks.find((x) => x.id === p.id);
+          await state.deleteBlock(p.id);
+          applied.push(`removed "${b?.label ?? "#" + p.id}"`);
+        }
+      }
+      const today = dayKey();
+      const now = useStore.getState().blocks.filter((b) => b.day === today).sort((a, b) => a.start_min - b.start_min);
+      const sched = now.length
+        ? now.map((b) => `${fmt24(b.start_min)}-${fmt24(b.end_min)}  ${b.label} (${b.type})`).join("\n")
+        : "(no blocks remain today)";
+      setPending(null);
+      setMessages((m) => [...m, { role: "assistant", content: `Applied to your schedule:\n${applied.join("\n")}\n\nToday now:\n${sched}` }]);
+    } catch (e) {
+      setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${e instanceof Error ? e.message : "Could not apply"}` }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = async (text: string, base: Msg[]) => {
+    const trimmed = text.trim();
+    if (!trimmed || busy) return;
+
+    const inv = parseInvocation(trimmed);
+    if (inv && inv.token === "help") {
+      setMessages([...base, { role: "user", content: trimmed }, { role: "assistant", content: helpText() }]);
+      setInput("");
+      return;
+    }
+    if (inv) {
+      setMessages([
+        ...base,
+        { role: "user", content: trimmed },
+        { role: "assistant", content: `Unknown command "/${inv.token}". Only /help is a command — otherwise just ask the agent naturally.` },
+      ]);
+      setInput("");
+      return;
+    }
+
+    const next: Msg[] = [...base, { role: "user", content: trimmed }];
     setMessages(next);
     setInput("");
     setBusy(true);
     setTyping(true);
     try {
-      // Custom agent invocations (/agent or @agent) run locally, no API call.
-      if (inv) {
-        const def = findAgent(inv.token);
-        if (def) {
-          const tasks = useStore.getState().tasks;
-          const blocks = useStore.getState().blocks;
-          const reply = await runAgent(def, {
-            tasks,
-            blocks,
-            addTask: useStore.getState().addTask,
-            addBlock: useStore.getState().addBlock,
-            query: inv.rest,
-            history: next.slice(0, -1),
-          });
-          setMessages((m) => [...m, { role: "assistant", content: reply }]);
-          return;
-        }
-        setMessages((m) => [
-          ...m,
-          {
-            role: "assistant",
-            content: `No agent named "/${inv.token}". Available: ${listAgents().map((a) => `/${a.id}`).join(", ") || "none yet"}.`,
-          },
-        ]);
-        return;
-      }
       if (!aiEnabled()) {
-        throw new Error("AI not configured — tap the gear above to add your API settings.");
+        throw new Error("AI not configured. Tap the gear above to add your API settings.");
       }
-      let acc = "";
-      await chatStream(next, (delta) => {
-        acc += delta;
-      });
-      setMessages((m) => [...m, { role: "assistant", content: acc }]);
+      const reply = await chatWithTools(next, buildContext());
+      if (reply.toolCalls && reply.toolCalls.length) {
+        const { proposals, note } = proposalsFromToolCalls(reply.toolCalls, useStore.getState().blocks);
+        if (proposals.length) {
+          setPending({ proposals });
+          setMessages((m) => [
+            ...m,
+            {
+              role: "assistant",
+              content: `I'd like to make ${proposals.length} change${proposals.length > 1 ? "s" : ""} to your today:\n\n${proposals.map(describeProposal).join("\n")}\n\nApprove or reject below.`,
+            },
+          ]);
+        } else {
+          setMessages((m) => [...m, { role: "assistant", content: note ?? "I couldn't plan that change." }]);
+        }
+      } else {
+        setMessages((m) => [...m, { role: "assistant", content: reply.text ?? "" }]);
+      }
     } catch (e) {
       setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${e instanceof Error ? e.message : "Request failed"}` }]);
     } finally {
       setBusy(false);
       setTyping(false);
     }
+  };
+
+  const send = () => submit(input, messages);
+
+  const copyMessage = async (content: string) => {
+    try {
+      await Clipboard.setStringAsync(content);
+    } catch {}
+  };
+
+  // Retry: drop everything after the user prompt that produced this assistant reply
+  // and re-submit that prompt.
+  const retry = (idx: number) => {
+    let userIdx = -1;
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].role === "user") { userIdx = i; break; }
+    }
+    if (userIdx === -1) return;
+    const text = messages[userIdx].content;
+    const base = messages.slice(0, userIdx);
+    setPending(null);
+    submit(text, base);
   };
 
   return (
@@ -156,7 +241,8 @@ export default function AgentScreen() {
           <Pressable
             style={styles.clearBtn}
             onPress={() => {
-              setMessages([{ role: "assistant", content: "Hi, I'm your agent. Ask me to plan, draft tasks, or estimate — or just chat." }]);
+              setMessages([{ role: "assistant", content: "Hi, I'm your agent. Ask me to plan, draft tasks, or estimate. Or just chat." }]);
+              setPending(null);
               setTyping(false);
               setBusy(false);
             }}
@@ -182,12 +268,40 @@ export default function AgentScreen() {
             {m.role === "user" ? (
               <Text style={styles.textMe}>{m.content}</Text>
             ) : (
-              <Markdown style={mdStyles}>{m.content}</Markdown>
+              <>
+                <Markdown style={mdStyles}>{m.content}</Markdown>
+                <View style={styles.msgActions}>
+                  <Pressable style={styles.msgAction} onPress={() => copyMessage(m.content)} accessibilityRole="button" accessibilityLabel="Copy message">
+                    <Ionicons name="copy-outline" size={14} color={SUB} />
+                    <Text style={styles.msgActionText}>Copy</Text>
+                  </Pressable>
+                  <Pressable style={styles.msgAction} onPress={() => retry(i)} disabled={busy} accessibilityRole="button" accessibilityLabel="Retry">
+                    <Ionicons name="refresh" size={14} color={SUB} />
+                    <Text style={styles.msgActionText}>Retry</Text>
+                  </Pressable>
+                </View>
+              </>
             )}
           </View>
         ))}
         {typing && <TypingIndicator />}
       </ScrollView>
+
+      {pending && (
+        <View style={styles.approveBox}>
+          <Text style={styles.approveTitle}>{pending.proposals.length} change{pending.proposals.length > 1 ? "s" : ""} proposed</Text>
+          <View style={styles.approveActions}>
+            <Pressable style={styles.rejectBtn} onPress={() => { setPending(null); }} accessibilityRole="button">
+              <Ionicons name="close" size={16} color={SUB} />
+              <Text style={styles.rejectText}>Reject</Text>
+            </Pressable>
+            <Pressable style={styles.approveBtn} onPress={approve} disabled={busy} accessibilityRole="button">
+              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+              <Text style={styles.approveText}>Approve</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {settings && <SettingsModal onClose={() => setSettings(false)} onSaved={() => setAiReady(aiEnabled())} />}
       {invHint.length > 0 && (
@@ -263,8 +377,30 @@ const styles = StyleSheet.create({
   typingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: SUB },
   textMe: { color: "#FFFFFF", fontSize: 15 },
   textAi: { color: TEXT, fontSize: 15 },
+  msgActions: { flexDirection: "row", gap: 16, marginTop: 10, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: LINE },
+  msgAction: { flexDirection: "row", alignItems: "center", gap: 5 },
+  msgActionText: { color: SUB, fontSize: 12, fontWeight: "600" },
   inputRow: { flexDirection: "row", alignItems: "flex-end", gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
   agentHint: { paddingHorizontal: 16, paddingTop: 8, gap: 8 },
+  approveBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: "#1A1A1A",
+    borderWidth: 1,
+    borderColor: LINE,
+  },
+  approveTitle: { color: TEXT, fontSize: 13, fontWeight: "700", flex: 1 },
+  approveActions: { flexDirection: "row", gap: 8 },
+  rejectBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, borderColor: LINE },
+  rejectText: { color: SUB, fontSize: 14, fontWeight: "700" },
+  approveBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: BUBBLE_ME },
+  approveText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
   agentHintTitle: { color: SUB, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
   agentChip: {
     flexDirection: "row",

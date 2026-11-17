@@ -58,6 +58,13 @@ export const testAiConnection = async (): Promise<string> => {
 
 type Msg = { role: "system" | "user" | "assistant"; content: string };
 
+// Writing rules shared across every AI prompt (mirrors RULES.md): plain, clear,
+// everyday language — no em dashes, buzzwords, or technobabble.
+export const PLAIN_RULES =
+  "Write in plain, everyday language. Never use em dashes (—) — use a period, a hyphen, or restructure. " +
+  "Avoid buzzwords and technobabble that could confuse a non-technical user; " +
+  "use short, concrete words instead of jargon.";
+
 const chat = async (messages: Msg[], json = true): Promise<string> => {
   if (!aiEnabled()) throw new Error("AI is not configured");
   const url = `${CONFIG.baseURL.replace(/\/+$/, "")}/chat/completions`;
@@ -145,7 +152,11 @@ export const chatMessage = async (
     {
       role: "system",
       content:
-        "You are EasyTasky's assistant. Be concise and helpful. You can propose tasks (title, quadrant, energy) when useful.",
+        "You are EasyTasky's assistant. Be concise and helpful. " +
+        "CRITICAL: you CANNOT modify the user's tasks or time blocks, and you never have. " +
+        "You only see a read-only snapshot of their current data. Never claim you added, edited, deleted, " +
+        "or applied anything, and never describe a schedule that is not in the user's actual data. " +
+        "If the user wants a change, say what you would do and tell them to apply it in the app. " + PLAIN_RULES,
     },
     ...history.map((h) => ({ role: h.role as Msg["role"], content: h.content })),
   ];
@@ -163,12 +174,22 @@ const decodeChunk = (value: Uint8Array): string => {
 
 export const chatStream = async (
   history: { role: "user" | "assistant"; content: string }[],
-  onDelta: (text: string) => void
+  onDelta: (text: string) => void,
+  context = ""
 ): Promise<string> => {
   if (!aiEnabled()) throw new Error("AI is not configured");
   const url = `${CONFIG.baseURL.replace(/\/+$/, "")}/chat/completions`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (CONFIG.apiKey) headers.Authorization = `Bearer ${CONFIG.apiKey}`;
+  const baseSystem =
+    "You are EasyTasky's assistant. Be concise and helpful. " +
+    "CRITICAL: you CANNOT modify the user's tasks or time blocks, and you never have. " +
+    "You only see a read-only snapshot of their current data. Never claim you added, edited, deleted, " +
+    "or applied anything, and never describe a schedule that is not in the snapshot. " +
+    "If the user wants a change, say exactly what you would do and tell them the app must apply it " +
+    "(e.g. use /timeblock and type APPLY). Always answer only from the provided snapshot. " +
+    PLAIN_RULES;
+  const system = context ? `${baseSystem}\n\nUser data:\n${context}` : baseSystem;
   const res = await fetch(url, {
     method: "POST",
     headers,
@@ -179,8 +200,7 @@ export const chatStream = async (
       messages: [
         {
           role: "system",
-          content:
-            "You are EasyTasky's assistant. Be concise and helpful. You can propose tasks (title, quadrant, energy) when useful.",
+          content: system,
         },
         ...history.map((h) => ({ role: h.role, content: h.content })),
       ],
@@ -229,4 +249,123 @@ export const estimateWithAI = async (title: string, samples: { title: string; mi
   const minutes = Number(j.minutes);
   if (!Number.isFinite(minutes) || minutes <= 0) throw new Error("Invalid estimate");
   return Math.round(minutes);
+};
+
+// ---- Tool calling (agent "superpowers") ----
+
+export type ToolCall = {
+  name: string;
+  args: Record<string, unknown>;
+};
+
+const TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "add_block",
+      description: "Propose adding a time block for today.",
+      parameters: {
+        type: "object",
+        properties: {
+          label: { type: "string", description: "What the block is for" },
+          type: { type: "string", enum: ["deep", "urgent", "batch", "maintenance", "buffer"], description: "Block kind" },
+          start: { type: "string", description: "Start time HH:MM (24h)" },
+          end: { type: "string", description: "End time HH:MM (24h)" },
+        },
+        required: ["label", "type", "start", "end"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_block",
+      description: "Propose editing an existing time block. Use find to locate it by its label.",
+      parameters: {
+        type: "object",
+        properties: {
+          find: { type: "string", description: "Text that appears in the block's label" },
+          label: { type: "string", description: "New label (optional)" },
+          type: { type: "string", enum: ["deep", "urgent", "batch", "maintenance", "buffer"], description: "New block kind (optional)" },
+          start: { type: "string", description: "New start time HH:MM (optional)" },
+          end: { type: "string", description: "New end time HH:MM (optional)" },
+        },
+        required: ["find"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_block",
+      description: "Propose deleting an existing time block.",
+      parameters: {
+        type: "object",
+        properties: {
+          find: { type: "string", description: "Text that appears in the block's label" },
+        },
+        required: ["find"],
+      },
+    },
+  },
+] as const;
+
+// One-shot completion that may return tool calls. Returns either a text reply or
+// a list of requested tool calls. Falls back to text-only if the endpoint rejects tools.
+export const chatWithTools = async (
+  history: { role: "user" | "assistant"; content: string }[],
+  context = ""
+): Promise<{ text?: string; toolCalls?: ToolCall[] }> => {
+  if (!aiEnabled()) throw new Error("AI is not configured");
+  const url = `${CONFIG.baseURL.replace(/\/+$/, "")}/chat/completions`;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (CONFIG.apiKey) headers.Authorization = `Bearer ${CONFIG.apiKey}`;
+  const system =
+    "You are EasyTasky's assistant. You can make changes to the user's time blocks by calling a tool. " +
+    "You do NOT apply changes yourself — calling a tool only proposes a change that the app will ask the user to approve. " +
+    "If the user asks to add, edit, or delete a time block, call the matching tool with the specifics. " +
+    "For anything else, answer normally in plain language. " + PLAIN_RULES;
+  const fullSystem = context ? `${system}\n\nUser data (current, authoritative):\n${context}` : system;
+
+  const call = async (withTools: boolean) => {
+    const body: Record<string, unknown> = {
+      model: CONFIG.model,
+      temperature: 0.3,
+      messages: [{ role: "system", content: fullSystem }, ...history.map((h) => ({ role: h.role, content: h.content }))],
+    };
+    if (withTools) {
+      body.tools = TOOLS;
+      body.tool_choice = "auto";
+    }
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    if (!res.ok) {
+      const b = await res.text().catch(() => "");
+      throw new Error(`AI request failed (${res.status}): ${b}`);
+    }
+    return res.json() as Promise<{ choices?: { message?: { content?: string | null; tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[] } }[] }>;
+  };
+
+  let data;
+  try {
+    data = await call(true);
+  } catch {
+    // If the endpoint doesn't support tools, retry without them.
+    data = await call(false);
+  }
+  const msg = data?.choices?.[0]?.message;
+  if (!msg) throw new Error("Empty AI response");
+  const tcs = msg.tool_calls ?? [];
+  if (tcs.length) {
+    const toolCalls: ToolCall[] = [];
+    for (const tc of tcs) {
+      const name = tc?.function?.name ?? "";
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(tc?.function?.arguments ?? "{}") as Record<string, unknown>;
+      } catch {}
+      toolCalls.push({ name, args });
+    }
+    return { toolCalls };
+  }
+  return { text: msg.content ?? "" };
 };

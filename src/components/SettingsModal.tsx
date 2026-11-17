@@ -37,7 +37,7 @@ export default function SettingsModal({ onClose, onSaved }: Props) {
     await saveAiConfig({ baseURL: baseURL.trim(), apiKey: apiKey.trim(), model: model.trim() });
     try {
       const reply = await testAiConnection();
-      setResult({ ok: true, text: `Connected${reply ? ` — "${reply}"` : ""}` });
+      setResult({ ok: true, text: `Connected${reply ? ` · "${reply}"` : ""}` });
     } catch (e) {
       setResult({ ok: false, text: e instanceof Error ? e.message : "Request failed" });
     } finally {

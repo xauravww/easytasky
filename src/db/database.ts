@@ -221,12 +221,12 @@ const seedIfNeeded = async (d: SQLiteDatabase): Promise<void> => {
   await mkTask({ title: "Reply to client emails", context: "phone", energy: "low", quadrant: "urgent_not_important", status: "inbox", estimated_min: 45 });
   await mkTask({ title: "Read product book ch.4", context: "sofa", energy: "medium", quadrant: "not_urgent_important", status: "planned", estimated_min: 60 });
   await mkTask({ title: "Clean up inbox / junk", context: "desk", energy: "low", quadrant: "neither", status: "inbox", estimated_min: 20 });
-  await mkTask({ title: "Book dentist appointment", context: "phone", energy: "low", quadrant: "urgent_not_important", status: "delegated", delegate_note: "Ask assistant to do this — 70% done is fine", estimated_min: 15 });
+  await mkTask({ title: "Book dentist appointment", context: "phone", energy: "low", quadrant: "urgent_not_important", status: "delegated", delegate_note: "Ask assistant to do this. 70% done is fine", estimated_min: 15 });
   await mkTask({ title: "Organize project folder", context: "desk", energy: "low", quadrant: "neither", status: "unwanted", estimated_min: 30 });
 
   // Time blocks for today, including a 20% buffer block.
   const blocks: [number, number, string, string, number][] = [
-    [9, 12, "Deep work — investor deck", "deep", 0.2],
+    [9, 12, "Deep work: investor deck", "deep", 0.2],
     [12, 13, "Lunch break", "buffer", 0],
     [13, 14, "Urgent admin (email/dentist)", "urgent", 0.2],
     [14, 15, "Reading + learning", "maintenance", 0.2],

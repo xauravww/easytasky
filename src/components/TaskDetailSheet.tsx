@@ -177,7 +177,7 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
               </Pressable>
             </View>
 
-            <Text style={styles.label}>Quadrant</Text>
+            <Text style={styles.label}>Priority</Text>
             <View style={styles.chipRow}>
               {QUADRANTS.map((q) => (
                 <Pressable
@@ -191,7 +191,7 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
               ))}
             </View>
 
-            <Text style={styles.label}>Energy</Text>
+            <Text style={styles.label}>Effort</Text>
             <View style={styles.chipRow}>
               {(["low", "medium", "high"] as const).map((e) => (
                 <Pressable

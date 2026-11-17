@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
@@ -41,7 +41,7 @@ const TYPE_LABEL: Record<string, string> = {
   urgent: "Urgent",
   batch: "Batch",
   maintenance: "Maintain",
-  buffer: "Buffer",
+  buffer: "Rest",
 };
 
 const RED = "#E5484D";
@@ -121,6 +121,19 @@ export default function TimeboxTool() {
   const [endTime, setEndTime] = useState(() => { const d = new Date(); d.setHours(10, 0, 0, 0); return d; });
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
+
+  // "Now" indicator: current time in minutes since midnight, refreshed each minute.
+  const [nowMin, setNowMin] = useState(() => {
+    const n = new Date();
+    return n.getHours() * 60 + n.getMinutes();
+  });
+  useEffect(() => {
+    const id = setInterval(() => {
+      const n = new Date();
+      setNowMin(n.getHours() * 60 + n.getMinutes());
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const todays = useMemo(
     () => blocks.filter((b) => b.day === today && b.start_min >= DAY_START && b.end_min <= DAY_END).sort((a, b) => a.start_min - b.start_min),
@@ -206,6 +219,9 @@ export default function TimeboxTool() {
             {hours.map((h) => (
               <View key={h} style={[styles.gridlineRow, { height: HOUR_H }]} />
             ))}
+            {nowMin >= DAY_START && nowMin <= DAY_END && (
+              <View style={[styles.nowBar, { top: ((nowMin - DAY_START) / 60) * HOUR_H }]} pointerEvents="none" />
+            )}
             {todays.map((b) => {
               const top = ((b.start_min - DAY_START) / 60) * HOUR_H;
               const height = ((b.end_min - b.start_min) / 60) * HOUR_H;
@@ -331,6 +347,13 @@ const styles = StyleSheet.create({
   hourLabel: { color: IDLE, fontSize: 11, paddingLeft: 4 },
   gridArea: { flex: 1, position: "relative" },
   gridlineRow: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: LINE },
+  nowBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: RED,
+  },
   block: {
     position: "absolute",
     borderLeftWidth: 3,

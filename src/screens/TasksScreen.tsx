@@ -181,7 +181,7 @@ export default function TasksScreen() {
                 placeholderTextColor={TAB_IDLE}
                 style={styles.input}
               />
-              <Text style={styles.fieldLabel}>Quadrant</Text>
+              <Text style={styles.fieldLabel}>Priority</Text>
               <View style={styles.chipRow}>
                 {QUADRANTS.map((q) => (
                   <Pressable
@@ -194,7 +194,7 @@ export default function TasksScreen() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.fieldLabel}>Energy</Text>
+              <Text style={styles.fieldLabel}>Effort</Text>
               <View style={styles.chipRow}>
                 {(["low", "medium", "high"] as const).map((e) => (
                   <Pressable
@@ -215,7 +215,7 @@ export default function TasksScreen() {
               )}
               {parseErr ? <Text style={styles.parseErr}>{parseErr}</Text> : null}
               {suggested ? (
-                <Text style={styles.estimate}>~{suggested} min — from similar past tasks, +25% buffer</Text>
+                <Text style={styles.estimate}>~{suggested} min. Based on similar past tasks, plus 25% extra time</Text>
               ) : null}
               <Pressable style={styles.submit} onPress={submit} accessibilityRole="button">
                 <Text style={styles.submitText}>Add to inbox</Text>
