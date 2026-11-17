@@ -293,15 +293,16 @@ export const useStore = create<StoreState>((set, get) => ({
       timebox_end: t.timebox_end ?? null,
       note: t.note ?? null,
       repeat_rule: t.repeat_rule ?? null,
+      remind_time: t.remind_time ?? null,
       is_habit: t.is_habit ?? 0,
       habit_freq: t.habit_freq ?? null,
       habit_days: t.habit_days ?? null,
       habit_color: t.habit_color ?? null,
     };
     await db.runAsync(
-      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,is_habit,habit_freq,habit_days,habit_color)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.note, task.repeat_rule, task.is_habit, task.habit_freq, task.habit_days, task.habit_color]
+      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,remind_time,is_habit,habit_freq,habit_days,habit_color)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.note, task.repeat_rule, task.remind_time, task.is_habit, task.habit_freq, task.habit_days, task.habit_color]
     );
     set({ tasks: [task, ...get().tasks] });
     void syncTaskReminders(get().tasks);
@@ -313,8 +314,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!cur) return;
     const next = { ...cur, ...patch };
     await db.runAsync(
-      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=? WHERE id=?`,
-      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.repeat_rule ?? null, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, id]
+      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, remind_time=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=? WHERE id=?`,
+      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.repeat_rule ?? null, next.remind_time ?? null, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, id]
     );
     set({ tasks: get().tasks.map((t) => (t.id === id ? next : t)) });
     void syncTaskReminders(get().tasks);
@@ -338,15 +339,16 @@ export const useStore = create<StoreState>((set, get) => ({
           timebox_end: null,
           note: next.note,
           repeat_rule: next.repeat_rule,
+          remind_time: next.remind_time,
           is_habit: 0,
           habit_freq: null,
           habit_days: null,
           habit_color: null,
         };
         await db.runAsync(
-          `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,is_habit,habit_freq,habit_days,habit_color)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          [repeat.id, repeat.title, repeat.context, repeat.energy, repeat.quadrant, repeat.status, repeat.delegate_note, repeat.created_at, repeat.due_date, repeat.estimated_min, repeat.actual_min, repeat.timebox_end, repeat.note, repeat.repeat_rule, repeat.is_habit, repeat.habit_freq, repeat.habit_days, repeat.habit_color]
+          `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,remind_time,is_habit,habit_freq,habit_days,habit_color)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [repeat.id, repeat.title, repeat.context, repeat.energy, repeat.quadrant, repeat.status, repeat.delegate_note, repeat.created_at, repeat.due_date, repeat.estimated_min, repeat.actual_min, repeat.timebox_end, repeat.note, repeat.repeat_rule, repeat.remind_time, repeat.is_habit, repeat.habit_freq, repeat.habit_days, repeat.habit_color]
         );
         set({ tasks: [repeat, ...get().tasks] });
         void syncTaskReminders(get().tasks);

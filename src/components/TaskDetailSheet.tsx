@@ -44,6 +44,7 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
   const [quadrant, setQuadrant] = useState(task.quadrant ?? "not_urgent_important");
   const [energy, setEnergy] = useState<Task["energy"]>(task.energy);
   const [repeatRule, setRepeatRule] = useState(task.repeat_rule ?? null);
+  const [remindTime, setRemindTime] = useState(task.remind_time ?? null);
   const [subInput, setSubInput] = useState("");
 
   const mine = subtasks.filter((s) => s.task_id === task.id);
@@ -57,6 +58,7 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
       quadrant,
       energy,
       repeat_rule: repeatRule,
+      remind_time: remindTime,
     });
   };
 
@@ -204,6 +206,26 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
                 </Pressable>
               ))}
             </View>
+
+            {task.due_date && (
+              <>
+                <Text style={styles.label}>Remind</Text>
+                <View style={styles.chipRow}>
+                  {([null, "09:00", "12:00", "18:00"] as const).map((r) => (
+                    <Pressable
+                      key={r ?? "off"}
+                      style={[styles.chip, remindTime === r && styles.chipActive]}
+                      onPress={() => { setRemindTime(r); updateTask(task.id, { remind_time: r }); }}
+                      accessibilityRole="button"
+                    >
+                      <Text style={[styles.chipText, remindTime === r && styles.chipTextActive]}>
+                        {r === null ? "Off" : r}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
 
             <View style={styles.divider} />
 

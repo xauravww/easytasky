@@ -128,6 +128,8 @@ Habits are tasks with `is_habit: 1`, `status: "habit"`, plus `habit_freq` ("dail
 - **Subtasks** live in the `subtasks` table (`task_id`, `sort`, `done`); add via input + plus button (return key submits), toggle = mini teal check, delete = ghost ×. `deleteTask` cascades subtasks.
 - Shared `fmtDue` lives in `src/utils/taskFormat.ts` — never re-implement due-date labels per screen (and never use `toISOString().slice(0,10)` for "today" — that's UTC; use `dayKey()`).
 - **Recurring tasks:** a task with `repeat_rule` ("daily" | "weekly" | "monthly", set in the detail sheet's Repeat row) auto-spawns its next instance when completed — the respawn happens inside `updateTask` when status flips open → done (via `nextDueFor`). Completing the *next* instance continues the chain; the repeat never stores a "parent" link.
+- **Reminders honor `remind_time`** (HH:MM, nullable; set via the detail sheet's Remind row, only shown when the task has a `due_date`). `syncTaskReminders` falls back to 09:00 when null. The same column is cloned by recurring respawns.
+- **Calendar** (Review tab, `MonthCalendar.tsx`): Monday-first month grid; day heat = focus seconds (blue) and orange dot = has tasks; tapping a day lists it tasks. Pure CSS/SVG — no calendar dependency.
 
 ## AI integration (OpenAI-compatible)
 

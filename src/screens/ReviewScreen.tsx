@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Line, Rect } from "react-native-svg";
 import { useStore } from "../store/useStore";
+import MonthCalendar from "../components/MonthCalendar";
 
 const BG = "#141414";
 const CARD = "#1A1A1A";
@@ -18,6 +19,8 @@ const fmtHour = (h: number) => {
 
 export default function ReviewScreen() {
   const logs = useStore((s) => s.logs);
+  const tasks = useStore((s) => s.tasks);
+  const pomos = useStore((s) => s.pomos);
   const { width: winW } = useWindowDimensions();
   const plotW = Math.min(winW - 32 - 38, 380);
   const plotH = 110;
@@ -37,6 +40,8 @@ export default function ReviewScreen() {
   return (
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.content}>
+        <MonthCalendar tasks={tasks} pomos={pomos} />
+
         <View style={styles.card}>
           <View style={styles.cardTop}>
             <Text style={styles.cardTitle}>Activity by hour</Text>

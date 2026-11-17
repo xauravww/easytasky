@@ -27,10 +27,20 @@ const ensurePermission = async () => {
   if (!cur.granted) await Notifications.requestPermissionsAsync();
 };
 
-// Reminder fires at 09:00 local on the due date; skip dates whose slot already passed.
-const reminderDate = (due: string): Date | null => {
+// Reminder fires at the task's remind_time (HH:MM) on the due date, falling back
+// to 09:00; skip dates whose slot already passed.
+const reminderDate = (due: string, remindTime?: string | null): Date | null => {
   const [y, m, d] = due.split("-").map(Number);
-  const at = new Date(y, m - 1, d, 9, 0, 0);
+  let hour = 9;
+  let minute = 0;
+  if (remindTime) {
+    const [hh, mm] = remindTime.split(":").map(Number);
+    if (hh >= 0 && hh < 24 && mm >= 0 && mm < 60) {
+      hour = hh;
+      minute = mm;
+    }
+  }
+  const at = new Date(y, m - 1, d, hour, minute, 0);
   return at.getTime() > Date.now() + 30_000 ? at : null;
 };
 
@@ -45,7 +55,7 @@ export const syncTaskReminders = async (tasks: Task[]): Promise<void> => {
     ids.clear();
     for (const t of tasks) {
       if (t.status === "done" || t.is_habit === 1 || !t.due_date) continue;
-      const at = reminderDate(t.due_date);
+      const at = reminderDate(t.due_date, t.remind_time);
       if (!at) continue;
       const identifier = await Notifications.scheduleNotificationAsync({
         content: { title: "Task due", body: t.title, color: ACCENT, data: { taskId: t.id } },
