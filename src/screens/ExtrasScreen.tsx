@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ReviewScreen from "./ReviewScreen";
+import TimeboxTool from "../components/TimeboxTool";
 
 const BG = "#141414";
 const CARD = "#1A1A1A";
@@ -32,9 +33,16 @@ export default function ExtrasScreen() {
       render: () => <ReviewScreen />,
     },
     {
+      id: "timebox",
+      icon: "time-outline",
+      title: "Timeblocking",
+      desc: "Plan your day into focused time blocks",
+      render: () => <TimeboxTool />,
+    },
+    {
       id: "placeholder1",
       icon: "flask-outline",
-      title: "Tool 02",
+      title: "Tool 03",
       desc: "Coming soon — add your tools here",
       render: () => <View style={styles.placeholder}><Text style={styles.placeholderText}>Nothing here yet.</Text></View>,
     },
