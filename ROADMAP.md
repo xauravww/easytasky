@@ -13,7 +13,7 @@ Status legend: `[ ]` planned · `[~]` in progress · `[x]` done.
 ## Interactions / polish
 
 - [ ] **Swipe actions on rows** — `react-native-gesture-handler` (bundled in Expo Go): swipe to complete / snooze to tomorrow / delete.
-- [ ] **Notes markdown** — render `note` with react-native-markdown-display (already a dep).
+- [x] **Notes markdown** — render `note` with react-native-markdown-display (already a dep).
 - [ ] **Review charts** — weekly focus bars + GitHub-style streak calendar.
 
 ## Done
@@ -25,6 +25,7 @@ Status legend: `[ ]` planned · `[~]` in progress · `[x]` done.
 - [x] Task detail sheet (notes, subtasks, energy/quadrant, start-focus)
 - [x] User-supplied AI keys (settings gear → AsyncStorage)
 - [x] Local due-date reminders (expo-notifications)
+- [x] Notes markdown (preview/edit in task detail)
 - [x] Stopwatch focus mode + exact-second session logging
 - [x] Dark restyle of HabitsScreen, shared `fmtDue`
 - [x] "Today · X focused" counter on Focus

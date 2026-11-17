@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Markdown from "react-native-markdown-display";
 import type { Task } from "../db/database";
 import { fmtDue } from "../utils/taskFormat";
 import { dayKey } from "../utils/time";
@@ -46,6 +47,7 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
   const [repeatRule, setRepeatRule] = useState(task.repeat_rule ?? null);
   const [remindTime, setRemindTime] = useState(task.remind_time ?? null);
   const [subInput, setSubInput] = useState("");
+  const [editingNote, setEditingNote] = useState(!task.note);
 
   const mine = subtasks.filter((s) => s.task_id === task.id);
   const doneCount = mine.filter((s) => s.done).length;
@@ -111,16 +113,29 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
           )}
 
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>Notes</Text>
-            <TextInput
-              value={note}
-              onChangeText={setNote}
-              onEndEditing={saveMeta}
-              placeholder="Add details…"
-              placeholderTextColor={IDLE}
-              style={[styles.noteInput]}
-              multiline
-            />
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Notes</Text>
+              {task.note ? (
+                <Pressable onPress={() => setEditingNote((v) => !v)} accessibilityRole="button" accessibilityLabel="Toggle note editing">
+                  <Ionicons name={editingNote ? "eye-outline" : "create-outline"} size={16} color={SUB} />
+                </Pressable>
+              ) : null}
+            </View>
+            {editingNote ? (
+              <TextInput
+                value={note}
+                onChangeText={setNote}
+                onEndEditing={() => { saveMeta(); setEditingNote(!note.trim()); }}
+                placeholder="Add details… (markdown supported)"
+                placeholderTextColor={IDLE}
+                style={styles.noteInput}
+                multiline
+              />
+            ) : (
+              <Pressable onPress={() => setEditingNote(true)} style={styles.notePreview} accessibilityRole="button">
+                <Markdown style={mdStyles}>{note || "Add details…"}</Markdown>
+              </Pressable>
+            )}
 
             <Text style={styles.label}>Subtasks</Text>
             {mine.map((s) => (
@@ -261,6 +276,26 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
   );
 }
 
+const mdStyles = {
+  body: { color: TEXT, fontSize: 15, lineHeight: 22 },
+  heading1: { color: TEXT, fontSize: 20, fontWeight: "700", marginVertical: 6 },
+  heading2: { color: TEXT, fontSize: 18, fontWeight: "700", marginVertical: 6 },
+  heading3: { color: TEXT, fontSize: 16, fontWeight: "700", marginVertical: 4 },
+  paragraph: { marginVertical: 4 },
+  strong: { color: TEXT, fontWeight: "700" },
+  em: { fontStyle: "italic" },
+  s: { textDecorationLine: "line-through" },
+  link: { color: ACCENT },
+  code_inline: { backgroundColor: "#000000", color: "#F8F8F2", fontFamily: "monospace", paddingHorizontal: 4, borderRadius: 4 },
+  code_block: { backgroundColor: "#000000", color: "#F8F8F2", fontFamily: "monospace", padding: 12, borderRadius: 8, marginVertical: 6 },
+  fence: { backgroundColor: "#000000", padding: 12, borderRadius: 8, marginVertical: 6 },
+  blockquote: { backgroundColor: "#1E1E1E", borderLeftWidth: 3, borderLeftColor: ACCENT, paddingHorizontal: 10, paddingVertical: 4, marginVertical: 4 },
+  bullet_list: { marginVertical: 2 },
+  ordered_list: { marginVertical: 2 },
+  list_item: { flexDirection: "row", alignItems: "flex-start", marginVertical: 2 },
+  hr: { backgroundColor: LINE, height: 1, marginVertical: 8 },
+};
+
 const styles = StyleSheet.create({
   scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   sheet: {
@@ -283,6 +318,8 @@ const styles = StyleSheet.create({
   metaText: { color: SUB, fontSize: 12, fontWeight: "600" },
   content: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
   label: { color: SUB, fontSize: 13, fontWeight: "600", marginTop: 14, marginBottom: 8 },
+  labelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 14 },
+  notePreview: { backgroundColor: FIELD_BG, borderWidth: 1, borderColor: LINE, borderRadius: 14, padding: 14, minHeight: 60 },
   noteInput: {
     backgroundColor: FIELD_BG,
     borderWidth: 1,
@@ -294,6 +331,7 @@ const styles = StyleSheet.create({
     padding: 14,
     minHeight: 76,
     textAlignVertical: "top",
+    marginTop: 8,
   },
   subRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 },
   subCheck: {
