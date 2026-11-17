@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { clearAiConfig, getAiConfig, saveAiConfig, testAiConnection } from "../lib/aiClient";
+import { useStore } from "../store/useStore";
 
 const BG = "#161616";
 const FIELD_BG = "#1E1E1E";
@@ -24,6 +25,13 @@ export default function SettingsModal({ onClose, onSaved }: Props) {
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [profile, setProfile] = useState(() => useStore.getState().profile);
+  const [profileExpanded, setProfileExpanded] = useState(false);
+  const setProfileStore = useStore((s) => s.setProfile);
+
+  const saveProfile = () => {
+    setProfileStore(profile);
+  };
 
   const save = async () => {
     await saveAiConfig({ baseURL: baseURL.trim(), apiKey: apiKey.trim(), model: model.trim() });
@@ -72,6 +80,22 @@ export default function SettingsModal({ onClose, onSaved }: Props) {
             <Text style={styles.hint}>
               Point EasyTasky at any OpenAI-compatible endpoint (OpenAI, Groq, OpenRouter, Ollama…). Your key stays on this device.
             </Text>
+
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>About me</Text>
+              <Pressable style={styles.expandBtn} onPress={() => setProfileExpanded((v) => !v)} accessibilityRole="button" accessibilityLabel={profileExpanded ? "Collapse" : "Expand"}>
+                <Text style={styles.expandText}>{profileExpanded ? "Collapse" : "Expand"}</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              style={[styles.input, profileExpanded ? styles.profileInputExpanded : styles.profileInput]}
+              value={profile}
+              onChangeText={setProfile}
+              onEndEditing={saveProfile}
+              placeholder="Tell the agent about you, e.g.: I'm a designer, work mornings, and plan in 90-minute blocks."
+              placeholderTextColor={SUB}
+              multiline
+            />
 
             <Text style={styles.label}>Base URL</Text>
             <TextInput
@@ -172,6 +196,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   keyRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  labelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  expandBtn: { paddingVertical: 4, paddingHorizontal: 8 },
+  expandText: { color: ACCENT, fontSize: 13, fontWeight: "700" },
+  profileInput: { maxHeight: 120, minHeight: 76, textAlignVertical: "top" },
+  profileInputExpanded: { maxHeight: 320, minHeight: 160, textAlignVertical: "top" },
   eye: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   secondaryBtn: {
     borderWidth: 1.5,

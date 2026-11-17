@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import ReviewScreen from "./ReviewScreen";
 import TimeboxTool from "../components/TimeboxTool";
+import EisenhowerMatrixTool from "../components/EisenhowerMatrixTool";
 
 const BG = "#141414";
 const CARD = "#1A1A1A";
@@ -36,6 +37,13 @@ export default function ExtrasScreen() {
       title: "Timeblocking",
       desc: "Plan your day into focused time blocks",
       render: () => <TimeboxTool />,
+    },
+    {
+      id: "eisenhower",
+      icon: "grid-outline",
+      title: "Eisenhower",
+      desc: "Do, schedule, delegate, or drop",
+      render: () => <EisenhowerMatrixTool />,
     },
   ];
 

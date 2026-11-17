@@ -34,7 +34,7 @@ const QUADRANTS = [
 
 export default function TasksScreen() {
   const insets = useSafeAreaInsets();
-  const { tasks, addTask, updateTask } = useStore();
+  const { tasks, addTask, updateTask, taskFilter, clearTaskFilter } = useStore();
 
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -48,8 +48,10 @@ export default function TasksScreen() {
   const open = useMemo(() => tasks.filter((t) => t.status !== "done" && t.status !== "habit"), [tasks]);
   const matched = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? open.filter((t) => t.title.toLowerCase().includes(q)) : open;
-  }, [open, query]);
+    let base = q ? open.filter((t) => t.title.toLowerCase().includes(q)) : open;
+    if (taskFilter) base = base.filter((t) => t.quadrant === taskFilter);
+    return base;
+  }, [open, query, taskFilter]);
 
   const groups = useMemo(() => {
     const today = dayKey();
@@ -136,6 +138,14 @@ export default function TasksScreen() {
             style={styles.searchInput}
           />
         </View>
+
+        {taskFilter && (
+          <Pressable style={styles.filterChip} onPress={clearTaskFilter} accessibilityRole="button" accessibilityLabel="Clear filter">
+            <Ionicons name="filter" size={14} color={ACCENT} />
+            <Text style={styles.filterText}>Showing: {taskFilter}</Text>
+            <Ionicons name="close-circle" size={16} color={TAB_IDLE} />
+          </Pressable>
+        )}
 
         {groups.overdue.length > 0 && (
           <>
@@ -251,6 +261,20 @@ const styles = StyleSheet.create({
   },
   searchWrap: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: SEARCH_BG, borderRadius: 14, paddingHorizontal: 14, height: 44, marginBottom: 8 },
   searchInput: { flex: 1, color: "#FFFFFF", fontSize: 15 },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(250,110,30,0.12)",
+    borderWidth: 1,
+    borderColor: ACCENT,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  filterText: { color: ACCENT, fontSize: 13, fontWeight: "600" },
   card: { backgroundColor: "#1A1A1A", borderRadius: 16, borderWidth: 1, borderColor: LINE, padding: 16, marginBottom: 12 },
   input: { backgroundColor: "#1E1E1E", borderWidth: 1.5, borderColor: LINE, borderRadius: 12, color: "#FFFFFF", fontSize: 15, padding: 14, marginBottom: 12 },
   fieldLabel: { color: TAB_IDLE, fontSize: 13, fontWeight: "600", marginBottom: 8 },

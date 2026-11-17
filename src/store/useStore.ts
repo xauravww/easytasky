@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDb, loadAll } from "../db/database";
 import type { ActivityLog, HabitCheck, PomoSession, Subtask, Task, TimeBlock } from "../db/database";
 import { dayKey, uid } from "../utils/time";
@@ -59,7 +60,13 @@ type StoreState = {
   subtasks: Subtask[];
   pomo: PomoState;
   focusReq: number;
+  taskFilter: string | null;
+  tasksReq: number;
+  profile: string;
   init: () => Promise<void>;
+  setProfile: (text: string) => Promise<void>;
+  openTaskFilter: (q: string) => void;
+  clearTaskFilter: () => void;
   toggleHabit: (habitId: string, day: string) => Promise<void>;
   addSubtask: (taskId: string, title: string) => Promise<void>;
   toggleSubtask: (id: string) => Promise<void>;
@@ -95,6 +102,9 @@ export const useStore = create<StoreState>((set, get) => ({
   habitChecks: [],
   subtasks: [],
   focusReq: 0,
+  taskFilter: null,
+  tasksReq: 0,
+  profile: "",
   pomo: {
     mode: "pomodoro" as PomoMode,
     running: false,
@@ -152,6 +162,9 @@ export const useStore = create<StoreState>((set, get) => ({
       },
     });
   },
+
+  openTaskFilter: (q) => set({ taskFilter: q, tasksReq: get().tasksReq + 1 }),
+  clearTaskFilter: () => set({ taskFilter: null }),
 
   // Cross-screen trigger: attach the task, bump focusReq so the App shell switches
   // to the immersive Focus screen, and start the timer if idle.
@@ -260,8 +273,19 @@ export const useStore = create<StoreState>((set, get) => ({
     const db = await getDb();
     const data = await loadAll(db);
     await loadAiConfig();
-    set({ ...data, ready: true });
+    let profile = "";
+    try {
+      profile = (await AsyncStorage.getItem("@easytasky/profile")) ?? "";
+    } catch {}
+    set({ ...data, ready: true, profile });
     void syncTaskReminders(get().tasks);
+  },
+
+  setProfile: async (text) => {
+    set({ profile: text });
+    try {
+      await AsyncStorage.setItem("@easytasky/profile", text);
+    } catch {}
   },
 
   toggleHabit: async (habitId, day) => {

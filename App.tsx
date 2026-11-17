@@ -49,6 +49,18 @@ export default function App() {
     []
   );
 
+  // Filtered task drill-down (e.g. Eisenhower "View all") → jump to Tasks.
+  useEffect(
+    () =>
+      useStore.subscribe((s, prev) => {
+        if (s.tasksReq !== prev.tasksReq && s.tasksReq > 0) {
+          setTab("tasks");
+          setFocusImmersive(false);
+        }
+      }),
+    []
+  );
+
   const switchTab = (next: TabKey) => {
     if (next === tab) return;
     setFocusImmersive(false);

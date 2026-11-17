@@ -97,6 +97,9 @@ export default function AgentScreen() {
     const todayBlocks = state.blocks.filter((b) => b.day === today).sort((a, b) => a.start_min - b.start_min);
     const parts: string[] = [];
     parts.push("This is the user's CURRENT ACTUAL data. It is authoritative — do not invent or describe anything missing from it.");
+    if (state.profile.trim()) {
+      parts.push(`About the user (their own words):\n${state.profile.trim()}`);
+    }
     if (openTasks.length) {
       const shown = openTasks.slice(0, 12).map((t) => `- ${t.title}${t.due_date ? ` (due ${t.due_date})` : ""}`);
       parts.push(`Open tasks:\n${shown.join("\n")}`);
