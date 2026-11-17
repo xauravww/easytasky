@@ -17,6 +17,11 @@ export const getAiConfig = (): AIConfig => CONFIG;
 
 export const aiEnabled = (): boolean => !!CONFIG.baseURL && !!CONFIG.model;
 
+// One-shot completion with a custom system prompt (used by agents).
+export const aiChatSystem = async (system: string, user: string): Promise<string> => {
+  return chat([{ role: "system", content: system }, { role: "user", content: user }], false);
+};
+
 export const loadAiConfig = async (): Promise<void> => {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);

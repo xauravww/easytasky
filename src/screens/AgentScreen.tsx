@@ -100,10 +100,14 @@ export default function AgentScreen() {
         const def = findAgent(inv.token);
         if (def) {
           const tasks = useStore.getState().tasks;
+          const blocks = useStore.getState().blocks;
           const reply = await runAgent(def, {
             tasks,
+            blocks,
             addTask: useStore.getState().addTask,
+            addBlock: useStore.getState().addBlock,
             query: inv.rest,
+            history: next.slice(0, -1),
           });
           setMessages((m) => [...m, { role: "assistant", content: reply }]);
           return;

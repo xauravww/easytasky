@@ -78,6 +78,7 @@ type StoreState = {
   updateTask: (id: string, patch: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   addBlock: (b: Omit<TimeBlock, "id">) => Promise<void>;
+  updateBlock: (id: number, patch: Partial<Omit<TimeBlock, "id">>) => Promise<void>;
   deleteBlock: (id: number) => Promise<void>;
   addLog: (l: Omit<ActivityLog, "id">) => Promise<void>;
   completePomo: (focusSec: number, brkSec: number, rounds: number, taskId?: string) => Promise<void>;
@@ -415,6 +416,18 @@ export const useStore = create<StoreState>((set, get) => ({
     const db = await getDb();
     await db.runAsync("DELETE FROM time_blocks WHERE id = ?", [id]);
     set({ blocks: get().blocks.filter((b) => b.id !== id) });
+  },
+
+  updateBlock: async (id, patch) => {
+    const db = await getDb();
+    const cur = get().blocks.find((b) => b.id === id);
+    if (!cur) return;
+    const next = { ...cur, ...patch };
+    await db.runAsync(
+      "UPDATE time_blocks SET day=?, start_min=?, end_min=?, label=?, type=?, buffer=? WHERE id=?",
+      [next.day, next.start_min, next.end_min, next.label, next.type, next.buffer, id]
+    );
+    set({ blocks: get().blocks.map((b) => (b.id === id ? next : b)) });
   },
 
   addLog: async (l) => {
