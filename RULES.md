@@ -127,6 +127,7 @@ Habits are tasks with `is_habit: 1`, `status: "habit"`, plus `habit_freq` ("dail
 - **Start focus handoff:** the sheet's "Start focus" row calls `startFocusFor(taskId)` (store) — it attaches the task, bumps `focusReq`, and starts the timer if idle; the App shell subscribes to `focusReq` and jumps to the immersive Focus screen. Any screen can trigger focus this way; never pass navigation props down for it.
 - **Subtasks** live in the `subtasks` table (`task_id`, `sort`, `done`); add via input + plus button (return key submits), toggle = mini teal check, delete = ghost ×. `deleteTask` cascades subtasks.
 - Shared `fmtDue` lives in `src/utils/taskFormat.ts` — never re-implement due-date labels per screen (and never use `toISOString().slice(0,10)` for "today" — that's UTC; use `dayKey()`).
+- **Recurring tasks:** a task with `repeat_rule` ("daily" | "weekly" | "monthly", set in the detail sheet's Repeat row) auto-spawns its next instance when completed — the respawn happens inside `updateTask` when status flips open → done (via `nextDueFor`). Completing the *next* instance continues the chain; the repeat never stores a "parent" link.
 
 ## AI integration (OpenAI-compatible)
 

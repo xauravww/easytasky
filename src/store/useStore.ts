@@ -5,6 +5,30 @@ import { dayKey, uid } from "../utils/time";
 import { syncTaskReminders } from "../lib/notifications";
 import { loadAiConfig } from "../lib/aiClient";
 
+// Next due date for a repeat rule, given today's due key ("" when none applies).
+const nextDueFor = (rule: string, from: string): string | null => {
+  const [y, m, d] = from.split("-").map(Number);
+  const base = new Date(y, m - 1, d);
+  let next: Date;
+  switch (rule) {
+    case "daily":
+      next = new Date(base);
+      next.setDate(base.getDate() + 1);
+      break;
+    case "weekly":
+      next = new Date(base);
+      next.setDate(base.getDate() + 7);
+      break;
+    case "monthly":
+      next = new Date(base);
+      next.setMonth(base.getMonth() + 1);
+      break;
+    default:
+      return null;
+  }
+  return dayKey(next);
+};
+
 export type PomoPhase = "focus" | "break";
 export type PomoMode = "pomodoro" | "stopwatch";
 
@@ -268,15 +292,16 @@ export const useStore = create<StoreState>((set, get) => ({
       actual_min: null,
       timebox_end: t.timebox_end ?? null,
       note: t.note ?? null,
+      repeat_rule: t.repeat_rule ?? null,
       is_habit: t.is_habit ?? 0,
       habit_freq: t.habit_freq ?? null,
       habit_days: t.habit_days ?? null,
       habit_color: t.habit_color ?? null,
     };
     await db.runAsync(
-      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,is_habit,habit_freq,habit_days,habit_color)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.note, task.is_habit, task.habit_freq, task.habit_days, task.habit_color]
+      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,is_habit,habit_freq,habit_days,habit_color)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.note, task.repeat_rule, task.is_habit, task.habit_freq, task.habit_days, task.habit_color]
     );
     set({ tasks: [task, ...get().tasks] });
     void syncTaskReminders(get().tasks);
@@ -288,11 +313,45 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!cur) return;
     const next = { ...cur, ...patch };
     await db.runAsync(
-      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=? WHERE id=?`,
-      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, id]
+      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=? WHERE id=?`,
+      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.repeat_rule ?? null, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, id]
     );
     set({ tasks: get().tasks.map((t) => (t.id === id ? next : t)) });
     void syncTaskReminders(get().tasks);
+
+    // Recurring: completing an open, repeating task spawns the next instance.
+    if (next.status === "done" && cur.status !== "done" && next.repeat_rule && next.due_date) {
+      const nextDue = nextDueFor(next.repeat_rule, next.due_date);
+      if (nextDue) {
+        const repeat: Task = {
+          id: uid(),
+          title: next.title,
+          context: next.context,
+          energy: next.energy,
+          quadrant: next.quadrant,
+          status: "inbox",
+          delegate_note: next.delegate_note,
+          created_at: Date.now(),
+          due_date: nextDue,
+          estimated_min: next.estimated_min,
+          actual_min: null,
+          timebox_end: null,
+          note: next.note,
+          repeat_rule: next.repeat_rule,
+          is_habit: 0,
+          habit_freq: null,
+          habit_days: null,
+          habit_color: null,
+        };
+        await db.runAsync(
+          `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,is_habit,habit_freq,habit_days,habit_color)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [repeat.id, repeat.title, repeat.context, repeat.energy, repeat.quadrant, repeat.status, repeat.delegate_note, repeat.created_at, repeat.due_date, repeat.estimated_min, repeat.actual_min, repeat.timebox_end, repeat.note, repeat.repeat_rule, repeat.is_habit, repeat.habit_freq, repeat.habit_days, repeat.habit_color]
+        );
+        set({ tasks: [repeat, ...get().tasks] });
+        void syncTaskReminders(get().tasks);
+      }
+    }
   },
 
   deleteTask: async (id) => {

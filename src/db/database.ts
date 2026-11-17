@@ -15,6 +15,7 @@ export type Task = {
   actual_min: number | null;
   timebox_end: number | null;
   note: string | null;
+  repeat_rule: string | null;
   is_habit: number;
   habit_freq: string | null;
   habit_days: string | null;
@@ -95,6 +96,7 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
       actual_min INTEGER,
       timebox_end INTEGER,
       note TEXT,
+      repeat_rule TEXT,
       is_habit INTEGER DEFAULT 0,
       habit_freq TEXT,
       habit_days TEXT,
@@ -159,6 +161,10 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
   // Migration for databases created before the note column existed.
   try {
     await db.execAsync("ALTER TABLE tasks ADD COLUMN note TEXT");
+  } catch {}
+  // Migration for databases created before the repeat_rule column existed.
+  try {
+    await db.execAsync("ALTER TABLE tasks ADD COLUMN repeat_rule TEXT");
   } catch {}
   // Migrations for databases created before the exact-second session columns.
   try {

@@ -43,6 +43,7 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
   const [note, setNote] = useState(task.note ?? "");
   const [quadrant, setQuadrant] = useState(task.quadrant ?? "not_urgent_important");
   const [energy, setEnergy] = useState<Task["energy"]>(task.energy);
+  const [repeatRule, setRepeatRule] = useState(task.repeat_rule ?? null);
   const [subInput, setSubInput] = useState("");
 
   const mine = subtasks.filter((s) => s.task_id === task.id);
@@ -55,6 +56,7 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
       note: note.trim() || null,
       quadrant,
       energy,
+      repeat_rule: repeatRule,
     });
   };
 
@@ -183,6 +185,22 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
                 >
                   <View style={[styles.energyDot, { backgroundColor: ENERGY_COLOR[e] }]} />
                   <Text style={[styles.chipText, energy === e && styles.chipTextActive]}>{e}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.label}>Repeat</Text>
+            <View style={styles.chipRow}>
+              {([null, "daily", "weekly", "monthly"] as const).map((r) => (
+                <Pressable
+                  key={r ?? "none"}
+                  style={[styles.chip, repeatRule === r && styles.chipActive]}
+                  onPress={() => { setRepeatRule(r); updateTask(task.id, { repeat_rule: r }); }}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.chipText, repeatRule === r && styles.chipTextActive]}>
+                    {r === null ? "None" : r[0].toUpperCase() + r.slice(1)}
+                  </Text>
                 </Pressable>
               ))}
             </View>
