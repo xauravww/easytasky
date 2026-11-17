@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "../store/useStore";
 import { dayKey } from "../utils/time";
+import type { TimeBlock } from "../db/database";
 
 const BG = "#141414";
 const CARD = "#1A1A1A";
@@ -174,6 +175,25 @@ export default function TimeboxTool() {
     setSelectedId(null);
   };
 
+  // Add a 20% buffer gap after each block (if room allows before the next block).
+  const addBuffers = async () => {
+    const sorted = [...todays].sort((a, b) => a.start_min - b.start_min);
+    const added: Omit<TimeBlock, "id">[] = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const b = sorted[i];
+      // Skip if this is already a buffer or sits right before a buffer.
+      if (b.type === "buffer") continue;
+      const nextStart = sorted[i + 1]?.start_min ?? DAY_END;
+      const bufLen = Math.round((b.end_min - b.start_min) * 0.2);
+      const bufStart = b.end_min;
+      const bufEnd = Math.min(bufStart + bufLen, nextStart);
+      if (bufEnd - bufStart >= 10 && bufEnd <= DAY_END) {
+        added.push({ day: today, start_min: bufStart, end_min: bufEnd, label: "Buffer", type: "buffer", buffer: 0.2 });
+      }
+    }
+    for (const blk of added) await addBlock(blk);
+  };
+
   const openEdit = (b: (typeof todays)[number]) => {
     setEditId(b.id);
     setLabel(b.label);
@@ -196,6 +216,10 @@ export default function TimeboxTool() {
             {todays.length} blocks · {Math.round(totalMin / 60)}h planned
           </Text>
         </View>
+        <Pressable style={styles.bufferBtn} onPress={addBuffers} accessibilityRole="button" accessibilityLabel="Add 20% buffer">
+          <Ionicons name="hourglass-outline" size={18} color={ACCENT} />
+          <Text style={styles.bufferBtnText}>20% buffer</Text>
+        </Pressable>
         <Pressable style={styles.addBtn} onPress={openAdd} accessibilityRole="button">
           <Ionicons name="add" size={20} color="#FFFFFF" />
           <Text style={styles.addBtnText}>Block</Text>
@@ -342,6 +366,8 @@ const styles = StyleSheet.create({
   sub: { color: SUB, fontSize: 13, marginTop: 2 },
   addBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: ACCENT, borderRadius: 999, paddingHorizontal: 14, minHeight: 40 },
   addBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
+  bufferBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1.5, borderColor: ACCENT, borderRadius: 999, paddingHorizontal: 12, minHeight: 40 },
+  bufferBtnText: { color: ACCENT, fontWeight: "700", fontSize: 13 },
   timelineRow: { flexDirection: "row", flex: 1 },
   labels: { width: GUTTER, paddingTop: 2 },
   hourLabel: { color: IDLE, fontSize: 11, paddingLeft: 4 },

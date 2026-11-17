@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
@@ -6,6 +6,9 @@ import Markdown from "react-native-markdown-display";
 import { aiEnabled, chatWithTools, getAiConfig } from "../lib/aiClient";
 import { describeProposal, helpText, listAgents, parseInvocation, proposalsFromToolCalls } from "../lib/agents";
 import type { BlockProposal } from "../lib/agents";
+import { synthesizeSpeech } from "../lib/talk";
+import { useAudioPlayer } from "expo-audio";
+import CallModeModal from "../components/CallModeModal";
 import { useStore } from "../store/useStore";
 import { dayKey } from "../utils/time";
 import SettingsModal from "../components/SettingsModal";
@@ -85,6 +88,29 @@ export default function AgentScreen() {
   const [settings, setSettings] = useState(false);
   const [aiReady, setAiReady] = useState(aiEnabled());
   const [pending, setPending] = useState<{ proposals: BlockProposal[] } | null>(null);
+  const [talkOn, setTalkOn] = useState(false);
+  const [callOpen, setCallOpen] = useState(false);
+  const [speechUrl, setSpeechUrl] = useState<string | null>(null);
+  const player = useAudioPlayer(speechUrl ? { uri: speechUrl } : undefined);
+
+  useEffect(() => {
+    if (speechUrl && player) {
+      try {
+        player.replace({ uri: speechUrl });
+        player.play();
+      } catch {}
+    }
+  }, [speechUrl, player]);
+
+  const maybeSpeak = async (content: string) => {
+    if (!talkOn) return;
+    try {
+      const url = await synthesizeSpeech(content);
+      setSpeechUrl(url);
+    } catch {
+      // silent — speech is optional
+    }
+  };
 
   // Show agent suggestions while typing "/" or "@".
   const invHint = input.startsWith("/") || input.startsWith("@") ? listAgents() : [];
@@ -193,7 +219,9 @@ export default function AgentScreen() {
           setMessages((m) => [...m, { role: "assistant", content: note ?? "I couldn't plan that change." }]);
         }
       } else {
-        setMessages((m) => [...m, { role: "assistant", content: reply.text ?? "" }]);
+        const content = reply.text ?? "";
+        setMessages((m) => [...m, { role: "assistant", content }]);
+        void maybeSpeak(content);
       }
     } catch (e) {
       setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${e instanceof Error ? e.message : "Request failed"}` }]);
@@ -204,6 +232,33 @@ export default function AgentScreen() {
   };
 
   const send = () => submit(input, messages);
+
+  const handleCallResult = useCallback(async (text: string): Promise<string> => {
+    const next: Msg[] = [...messages, { role: "user", content: text }];
+    setMessages(next);
+    try {
+      const reply = await chatWithTools(next, buildContext());
+      if (reply.toolCalls && reply.toolCalls.length) {
+        const { proposals, note } = proposalsFromToolCalls(reply.toolCalls, useStore.getState().blocks);
+        const content = proposals.length
+          ? `I'd propose ${proposals.length} change${proposals.length > 1 ? "s" : ""}. Check the app to approve.`
+          : (note ?? "I couldn't act on that.");
+        setMessages((m) => [...m, { role: "assistant", content }]);
+        return content;
+      }
+      const content = reply.text ?? "";
+      setMessages((m) => [...m, { role: "assistant", content }]);
+      return content;
+    } catch (e) {
+      const content = e instanceof Error ? e.message : "Request failed";
+      setMessages((m) => [...m, { role: "assistant", content }]);
+      return content;
+    }
+  }, [messages]);
+
+  const handleCallClose = useCallback(() => {
+    setCallOpen(false);
+  }, []);
 
   const copyMessage = async (content: string) => {
     try {
@@ -232,6 +287,15 @@ export default function AgentScreen() {
           <Text style={styles.h1}>Agent</Text>
           <Text style={styles.headerSub}>{aiReady ? getAiConfig().model : "not configured"}</Text>
         </View>
+        <Pressable
+          style={[styles.clearBtn, talkOn && styles.talkBtnOn]}
+          onPress={() => setTalkOn((v) => !v)}
+          accessibilityRole="button"
+          accessibilityLabel="Toggle talk mode"
+          accessibilityState={{ selected: talkOn }}
+        >
+          <Ionicons name="mic" size={18} color={talkOn ? "#FFFFFF" : SUB} />
+        </Pressable>
         <Pressable
           style={styles.clearBtn}
           onPress={() => setSettings(true)}
@@ -336,10 +400,19 @@ export default function AgentScreen() {
           returnKeyType="send"
           onSubmitEditing={send}
         />
+        <Pressable
+          style={styles.micBtn}
+          onPress={() => setCallOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Start voice call"
+        >
+          <Ionicons name="mic" size={20} color={ACCENT} />
+        </Pressable>
         <Pressable style={[styles.sendBtn, busy && { opacity: 0.5 }]} onPress={send} disabled={busy} accessibilityRole="button" accessibilityLabel="Send">
           <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
         </Pressable>
       </View>
+      {callOpen && <CallModeModal onSend={handleCallResult} onClose={handleCallClose} />}
     </View>
   );
 }
@@ -432,4 +505,6 @@ const styles = StyleSheet.create({
     maxHeight: 120,
   },
   sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: BUBBLE_ME, alignItems: "center", justifyContent: "center" },
+  micBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: ACCENT, alignItems: "center", justifyContent: "center" },
+  talkBtnOn: { backgroundColor: ACCENT },
 });

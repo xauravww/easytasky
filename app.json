@@ -31,7 +31,8 @@
           "color": "#FA6E1E"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "@react-native-voice/voice"
     ]
   }
 }

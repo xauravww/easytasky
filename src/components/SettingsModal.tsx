@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { clearAiConfig, getAiConfig, saveAiConfig, testAiConnection } from "../lib/aiClient";
+import { getHeyGenKey, saveHeyGenKey } from "../lib/talk";
 import { useStore } from "../store/useStore";
 
 const BG = "#161616";
@@ -28,6 +29,8 @@ export default function SettingsModal({ onClose, onSaved }: Props) {
   const [profile, setProfile] = useState(() => useStore.getState().profile);
   const [profileExpanded, setProfileExpanded] = useState(false);
   const setProfileStore = useStore((s) => s.setProfile);
+  const [heygen, setHeygen] = useState(() => getHeyGenKey());
+  const [showHeygen, setShowHeygen] = useState(false);
 
   const saveProfile = () => {
     setProfileStore(profile);
@@ -35,6 +38,7 @@ export default function SettingsModal({ onClose, onSaved }: Props) {
 
   const save = async () => {
     await saveAiConfig({ baseURL: baseURL.trim(), apiKey: apiKey.trim(), model: model.trim() });
+    await saveHeyGenKey(heygen);
     onSaved();
     onClose();
   };
@@ -96,6 +100,25 @@ export default function SettingsModal({ onClose, onSaved }: Props) {
               placeholderTextColor={SUB}
               multiline
             />
+
+            <Text style={styles.talkTitle}>Talk mode</Text>
+            <Text style={styles.hint}>Speak and listen through the agent. Needs a HeyGen API key (speech out) and the AI base URL above (speech in).</Text>
+            <Text style={styles.label}>HeyGen API key</Text>
+            <View style={styles.keyRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                value={heygen}
+                onChangeText={setHeygen}
+                placeholder="sk_…"
+                placeholderTextColor={SUB}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry={!showHeygen}
+              />
+              <Pressable style={styles.eye} onPress={() => setShowHeygen((v) => !v)} accessibilityRole="button" accessibilityLabel="Toggle HeyGen key visibility">
+                <Ionicons name={showHeygen ? "eye-off-outline" : "eye-outline"} size={20} color={SUB} />
+              </Pressable>
+            </View>
 
             <Text style={styles.label}>Base URL</Text>
             <TextInput
@@ -184,6 +207,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingBottom: 36 },
   hint: { color: SUB, fontSize: 13, lineHeight: 19, marginBottom: 16 },
   label: { color: SUB, fontSize: 13, fontWeight: "600", marginTop: 12, marginBottom: 8 },
+  talkTitle: { color: TEXT, fontSize: 16, fontWeight: "700", marginTop: 20, marginBottom: 4 },
   input: {
     backgroundColor: FIELD_BG,
     borderWidth: 1,

@@ -22,6 +22,12 @@ export const aiChatSystem = async (system: string, user: string): Promise<string
   return chat([{ role: "system", content: system }, { role: "user", content: user }], false);
 };
 
+// One-shot completion expecting a JSON object; returns parsed JSON or throws.
+export const aiJson = async (system: string, user: string): Promise<Record<string, unknown>> => {
+  const raw = await aiChatSystem(`${system} Respond with JSON only.\n${PLAIN_RULES}`, user);
+  return safeJson(raw);
+};
+
 export const loadAiConfig = async (): Promise<void> => {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);

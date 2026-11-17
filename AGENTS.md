@@ -8,6 +8,12 @@ Expo ships breaking changes every SDK release. APIs you remember are likely rena
 2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
 3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconfrist tptions. Follow its links to the specific page you need; never answer from memory.
 
+## Talk mode (speech)
+
+- `@react-native-voice/voice` registers its native module as `RCTVoice`, but the library's JS reads `NativeModules.Voice` (always null). **Manual patch applied** to `node_modules/@react-native-voice/voice/dist/index.js`: line 8 uses `NativeModules.RCTVoice`. Re-apply after any `npm install` / clean checkout.
+- This is a dev-build feature: the app must be built with `expo run:android` (native mod) and connected to Metro via `adb reverse tcp:8081 tcp:8081`.
+- TTS uses HeyGen (`talk.ts`), key stored in AsyncStorage (`@easytasky/heygen-key`, never committed).
+
 ## Commands
 
 Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).

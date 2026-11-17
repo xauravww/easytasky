@@ -5,6 +5,7 @@ import type { ActivityLog, HabitCheck, PomoSession, Subtask, Task, TimeBlock } f
 import { dayKey, uid } from "../utils/time";
 import { syncTaskReminders } from "../lib/notifications";
 import { loadAiConfig } from "../lib/aiClient";
+import { loadHeyGenKey } from "../lib/talk";
 
 // Next due date for a repeat rule, given today's due key ("" when none applies).
 const nextDueFor = (rule: string, from: string): string | null => {
@@ -273,6 +274,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const db = await getDb();
     const data = await loadAll(db);
     await loadAiConfig();
+    await loadHeyGenKey();
     let profile = "";
     try {
       profile = (await AsyncStorage.getItem("@easytasky/profile")) ?? "";

@@ -4,6 +4,10 @@ import { Ionicons } from "@expo/vector-icons";
 import ReviewScreen from "./ReviewScreen";
 import TimeboxTool from "../components/TimeboxTool";
 import EisenhowerMatrixTool from "../components/EisenhowerMatrixTool";
+import CEO333Tool from "../components/CEO333Tool";
+import ShutdownRitualTool from "../components/ShutdownRitualTool";
+import NextDayPlanTool from "../components/NextDayPlanTool";
+import UnwantedInboxTool from "../components/UnwantedInboxTool";
 
 const BG = "#141414";
 const CARD = "#1A1A1A";
@@ -44,6 +48,34 @@ export default function ExtrasScreen() {
       title: "Eisenhower",
       desc: "Do, schedule, delegate, or drop",
       render: () => <EisenhowerMatrixTool />,
+    },
+    {
+      id: "ceo333",
+      icon: "flag-outline",
+      title: "3-3-3",
+      desc: "Build a focused day plan",
+      render: () => <CEO333Tool />,
+    },
+    {
+      id: "nextday",
+      icon: "calendar-outline",
+      title: "Next day",
+      desc: "Plan tomorrow before it comes",
+      render: () => <NextDayPlanTool />,
+    },
+    {
+      id: "shutdown",
+      icon: "moon-outline",
+      title: "Shutdown",
+      desc: "Close your day cleanly",
+      render: () => <ShutdownRitualTool />,
+    },
+    {
+      id: "unwanted",
+      icon: "ban-outline",
+      title: "Unwanted",
+      desc: "Triage discarded tasks",
+      render: () => <UnwantedInboxTool />,
     },
   ];
 
