@@ -3,10 +3,13 @@ import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, Te
 import { Ionicons } from "@expo/vector-icons";
 import Markdown from "react-native-markdown-display";
 import { aiEnabled, chatStream, getAiConfig } from "../lib/aiClient";
+import { findAgent, listAgents, parseInvocation, runAgent } from "../lib/agents";
+import { useStore } from "../store/useStore";
 import SettingsModal from "../components/SettingsModal";
 
 const BG = "#141414";
 const BUBBLE_ME = "#FA6E1E";
+const ACCENT = "#FA6E1E";
 const BUBBLE_AI = "#1E1E1E";
 const LINE = "#262626";
 const TEXT = "#FFFFFF";
@@ -79,15 +82,41 @@ export default function AgentScreen() {
   const [settings, setSettings] = useState(false);
   const [aiReady, setAiReady] = useState(aiEnabled());
 
+  // Show agent suggestions while typing "/" or "@".
+  const invHint = input.startsWith("/") || input.startsWith("@") ? listAgents() : [];
+
   const send = async () => {
     const text = input.trim();
     if (!text || busy) return;
+    const inv = parseInvocation(text);
     const next: Msg[] = [...messages, { role: "user", content: text }];
     setMessages(next);
     setInput("");
     setBusy(true);
     setTyping(true);
     try {
+      // Custom agent invocations (/agent or @agent) run locally, no API call.
+      if (inv) {
+        const def = findAgent(inv.token);
+        if (def) {
+          const tasks = useStore.getState().tasks;
+          const reply = await runAgent(def, {
+            tasks,
+            addTask: useStore.getState().addTask,
+            query: inv.rest,
+          });
+          setMessages((m) => [...m, { role: "assistant", content: reply }]);
+          return;
+        }
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content: `No agent named "/${inv.token}". Available: ${listAgents().map((a) => `/${a.id}`).join(", ") || "none yet"}.`,
+          },
+        ]);
+        return;
+      }
       if (!aiEnabled()) {
         throw new Error("AI not configured — tap the gear above to add your API settings.");
       }
@@ -157,6 +186,24 @@ export default function AgentScreen() {
       </ScrollView>
 
       {settings && <SettingsModal onClose={() => setSettings(false)} onSaved={() => setAiReady(aiEnabled())} />}
+      {invHint.length > 0 && (
+        <View style={styles.agentHint}>
+          <Text style={styles.agentHintTitle}>Agents</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {invHint.map((a) => (
+              <Pressable
+                key={a.id}
+                style={styles.agentChip}
+                onPress={() => setInput((v) => (v.endsWith("/") || v.endsWith("@") ? v + a.id : v))}
+                accessibilityRole="button"
+              >
+                <Text style={styles.agentChipText}>/{a.id}</Text>
+                <Text style={styles.agentChipDesc}> · {a.description}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
       <View style={[styles.inputRow, { paddingBottom: Math.max(keyboardH - 56, 8) }]}>
         <TextInput
           value={input}
@@ -213,6 +260,21 @@ const styles = StyleSheet.create({
   textMe: { color: "#FFFFFF", fontSize: 15 },
   textAi: { color: TEXT, fontSize: 15 },
   inputRow: { flexDirection: "row", alignItems: "flex-end", gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
+  agentHint: { paddingHorizontal: 16, paddingTop: 8, gap: 8 },
+  agentHintTitle: { color: SUB, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
+  agentChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1E1E1E",
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+  },
+  agentChipText: { color: ACCENT, fontSize: 13, fontWeight: "700" },
+  agentChipDesc: { color: SUB, fontSize: 13 },
   input: {
     flex: 1,
     backgroundColor: "#1E1E1E",
