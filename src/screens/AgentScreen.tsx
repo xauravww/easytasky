@@ -258,12 +258,12 @@ export default function AgentScreen() {
     }
 
     if (!applied.length) {
-      return "Haanji, ho gaya!";
+      return "हाँजी, हो गया!";
     }
     if (applied.length === 1) {
-      return `Ho gaya! ${applied[0]} kar diya.`;
+      return `हो गया! ${applied[0]} कर दिया है।`;
     }
-    return `Bilkul ho gaya! Ye sab nipta diya:\n${applied.map((a) => `• ${a}`).join("\n")}`;
+    return `बिल्कुल हो गया! ये सब निपटा दिया:\n${applied.map((a) => `• ${a}`).join("\n")}`;
   };
 
   const submit = async (text: string, base: Msg[]) => {
