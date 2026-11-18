@@ -3,6 +3,8 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { Ionicons } from "@expo/vector-icons";
 import { habitStreak, useStore } from "../store/useStore";
 import { addDays, dayKey } from "../utils/time";
+import type { Task } from "../db/database";
+import HabitDetailModal from "../components/HabitDetailModal";
 
 const BG = "#141414";
 const CARD = "#1A1A1A";
@@ -23,6 +25,10 @@ export default function HabitsScreen() {
   const [freq, setFreq] = useState<"daily" | "weekly">("daily");
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [color, setColor] = useState(PALETTE[3]);
+  const [habitType, setHabitType] = useState<"boolean" | "quantity">("boolean");
+  const [targetValue, setTargetValue] = useState("1");
+  const [unit, setUnit] = useState("times");
+  const [selectedHabit, setSelectedHabit] = useState<Task | null>(null);
 
   const habits = tasks.filter((t) => t.is_habit === 1);
   const today = dayKey();
@@ -49,6 +55,7 @@ export default function HabitsScreen() {
   const scheduled = habits.filter(dueToday);
   const submit = () => {
     if (!title.trim()) return;
+    const num = parseFloat(targetValue);
     addTask({
       title: title.trim(),
       status: "habit",
@@ -56,6 +63,9 @@ export default function HabitsScreen() {
       habit_freq: freq,
       habit_days: freq === "weekly" ? days.join(",") : null,
       habit_color: color,
+      habit_type: habitType,
+      habit_target_value: habitType === "quantity" ? (isNaN(num) || num <= 0 ? 1 : num) : 1,
+      habit_unit: habitType === "quantity" ? unit.trim() || "units" : "times",
     });
     setTitle("");
     setAdding(false);
@@ -111,6 +121,52 @@ export default function HabitsScreen() {
             style={styles.input}
             returnKeyType="done"
           />
+          <Text style={styles.fieldLabel}>Habit Type</Text>
+          <View style={styles.chipRow}>
+            <Pressable
+              style={[styles.chip, habitType === "boolean" && styles.chipActive]}
+              onPress={() => setHabitType("boolean")}
+            >
+              <Text style={[styles.chipText, habitType === "boolean" && styles.chipTextActive]}>
+                Only Do (Check-in)
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.chip, habitType === "quantity" && styles.chipActive]}
+              onPress={() => setHabitType("quantity")}
+            >
+              <Text style={[styles.chipText, habitType === "quantity" && styles.chipTextActive]}>
+                Quantity Based
+              </Text>
+            </Pressable>
+          </View>
+
+          {habitType === "quantity" && (
+            <View style={{ flexDirection: "row", gap: 12, marginBottom: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>Daily Target</Text>
+                <TextInput
+                  value={targetValue}
+                  onChangeText={setTargetValue}
+                  placeholder="e.g. 8"
+                  placeholderTextColor={IDLE}
+                  keyboardType="numeric"
+                  style={styles.input}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>Custom Unit</Text>
+                <TextInput
+                  value={unit}
+                  onChangeText={setUnit}
+                  placeholder="e.g. glasses, km, pages"
+                  placeholderTextColor={IDLE}
+                  style={styles.input}
+                />
+              </View>
+            </View>
+          )}
+
           <Text style={styles.fieldLabel}>Frequency</Text>
           <View style={styles.chipRow}>
             {(["daily", "weekly"] as const).map((f) => (
@@ -173,10 +229,23 @@ export default function HabitsScreen() {
         const streak = habitStreak(habitChecks, h.id);
         const checkedToday = habitChecks.some((c) => c.habit_id === h.id && c.day === today);
         const habitColor = h.habit_color ?? ACCENT;
+        const isQty = h.habit_type === "quantity";
+        const todayCheck = habitChecks.find((c) => c.habit_id === h.id && c.day === today);
+        const currentQty = todayCheck?.value ?? (checkedToday ? 1 : 0);
+
         return (
-          <View key={h.id} style={styles.row}>
+          <Pressable
+            key={h.id}
+            style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
+            onPress={() => setSelectedHabit(h)}
+          >
             <Pressable
-              style={({ pressed }) => [styles.check, { borderColor: habitColor }, checkedToday && { backgroundColor: habitColor, borderColor: habitColor }, pressed && { opacity: 0.6 }]}
+              style={({ pressed }) => [
+                styles.check,
+                { borderColor: habitColor },
+                checkedToday && { backgroundColor: habitColor, borderColor: habitColor },
+                pressed && { opacity: 0.6 },
+              ]}
               onPress={() => toggleHabit(h.id, today)}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: checkedToday }}
@@ -191,8 +260,15 @@ export default function HabitsScreen() {
               <View style={styles.rowSub}>
                 <Ionicons name="flame" size={13} color={streak > 0 ? "#D8B62E" : SUB} />
                 <Text style={styles.streakText}>{streak} day streak</Text>
+                {isQty ? (
+                  <Text style={[styles.freqText, { color: ACCENT, fontWeight: "600" }]}>
+                    · {currentQty}/{h.habit_target_value || 1} {h.habit_unit || "units"}
+                  </Text>
+                ) : null}
                 {h.habit_freq === "weekly" && h.habit_days ? (
-                  <Text style={styles.freqText}>· {h.habit_days.split(",").map((d) => WEEKDAYS[Number(d)]).join(" ")}</Text>
+                  <Text style={styles.freqText}>
+                    · {h.habit_days.split(",").map((d) => WEEKDAYS[Number(d)]).join(" ")}
+                  </Text>
                 ) : null}
               </View>
             </View>
@@ -211,10 +287,17 @@ export default function HabitsScreen() {
             >
               <Ionicons name="trash-outline" size={17} color={SUB} />
             </Pressable>
-          </View>
+          </Pressable>
         );
       })}
     </ScrollView>
+
+    {selectedHabit && (
+      <HabitDetailModal
+        habit={selectedHabit}
+        onClose={() => setSelectedHabit(null)}
+      />
+    )}
     </View>
   );
 }

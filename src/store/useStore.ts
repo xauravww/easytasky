@@ -87,7 +87,8 @@ type StoreState = {
   openTaskFilter: (q: string) => void;
   clearTaskFilter: () => void;
   setSectionFilter: (id: string | null) => void;
-  toggleHabit: (habitId: string, day: string) => Promise<void>;
+  toggleHabit: (habitId: string, day: string, value?: number) => Promise<void>;
+  logHabitValue: (habitId: string, day: string, value: number) => Promise<void>;
   addSubtask: (taskId: string, title: string) => Promise<void>;
   toggleSubtask: (id: string) => Promise<void>;
   deleteSubtask: (id: string) => Promise<void>;
@@ -335,14 +336,26 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch {}
   },
 
-  toggleHabit: async (habitId, day) => {
+  toggleHabit: async (habitId, day, value = 1) => {
     const db = await getDb();
     const existing = get().habitChecks.find((c) => c.habit_id === habitId && c.day === day);
     if (existing) {
       await db.runAsync("DELETE FROM habit_checks WHERE habit_id = ? AND day = ?", [habitId, day]);
       set({ habitChecks: get().habitChecks.filter((c) => !(c.habit_id === habitId && c.day === day)) });
     } else {
-      await db.runAsync("INSERT OR IGNORE INTO habit_checks (habit_id, day) VALUES (?,?)", [habitId, day]);
+      await db.runAsync("INSERT OR REPLACE INTO habit_checks (habit_id, day, value) VALUES (?,?,?)", [habitId, day, value]);
+      const checks = await db.getAllAsync<HabitCheck>("SELECT * FROM habit_checks ORDER BY day");
+      set({ habitChecks: mapRows(checks) });
+    }
+  },
+
+  logHabitValue: async (habitId, day, value) => {
+    const db = await getDb();
+    if (value <= 0) {
+      await db.runAsync("DELETE FROM habit_checks WHERE habit_id = ? AND day = ?", [habitId, day]);
+      set({ habitChecks: get().habitChecks.filter((c) => !(c.habit_id === habitId && c.day === day)) });
+    } else {
+      await db.runAsync("INSERT OR REPLACE INTO habit_checks (habit_id, day, value) VALUES (?,?,?)", [habitId, day, value]);
       const checks = await db.getAllAsync<HabitCheck>("SELECT * FROM habit_checks ORDER BY day");
       set({ habitChecks: mapRows(checks) });
     }
@@ -371,11 +384,14 @@ export const useStore = create<StoreState>((set, get) => ({
       habit_days: t.habit_days ?? null,
       habit_color: t.habit_color ?? null,
       section_id: t.section_id ?? null,
+      habit_type: t.habit_type ?? "boolean",
+      habit_target_value: t.habit_target_value ?? 1,
+      habit_unit: t.habit_unit ?? null,
     };
     await db.runAsync(
-      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,remind_time,is_habit,habit_freq,habit_days,habit_color,section_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.note, task.repeat_rule, task.remind_time, task.is_habit, task.habit_freq, task.habit_days, task.habit_color, task.section_id ?? null]
+      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,remind_time,is_habit,habit_freq,habit_days,habit_color,section_id,habit_type,habit_target_value,habit_unit)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.note, task.repeat_rule, task.remind_time, task.is_habit, task.habit_freq, task.habit_days, task.habit_color, task.section_id ?? null, task.habit_type ?? "boolean", task.habit_target_value ?? 1, task.habit_unit ?? null]
     );
     set({ tasks: [task, ...get().tasks] });
     void syncTaskReminders(get().tasks);
@@ -387,8 +403,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!cur) return;
     const next = { ...cur, ...patch };
     await db.runAsync(
-      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, remind_time=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=?, section_id=? WHERE id=?`,
-      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.repeat_rule ?? null, next.remind_time ?? null, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, next.section_id ?? null, id]
+      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, remind_time=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=?, section_id=?, habit_type=?, habit_target_value=?, habit_unit=? WHERE id=?`,
+      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.repeat_rule ?? null, next.remind_time ?? null, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, next.section_id ?? null, next.habit_type ?? "boolean", next.habit_target_value ?? 1, next.habit_unit ?? null, id]
     );
     set({ tasks: get().tasks.map((t) => (t.id === id ? next : t)) });
     void syncTaskReminders(get().tasks);
@@ -852,8 +868,7 @@ export const estimateForTitle = (tasks: Task[], title: string): number | null =>
   return Math.round(avg * 1.25);
 };
 
-// Current streak for a habit: consecutive checked days ending today (or yesterday
-// if today is not yet checked — the streak survives until the day actually passes).
+// Current streak and best (longest) streak for a habit.
 export const habitStreak = (checks: HabitCheck[], habitId: string): number => {
   const days = new Set(checks.filter((c) => c.habit_id === habitId).map((c) => c.day));
   const cur = new Date();
@@ -867,6 +882,27 @@ export const habitStreak = (checks: HabitCheck[], habitId: string): number => {
     cur.setDate(cur.getDate() - 1);
   }
   return streak;
+};
+
+// Best (all-time longest) streak for a habit.
+export const habitBestStreak = (checks: HabitCheck[], habitId: string): number => {
+  const sortedDays = Array.from(new Set(checks.filter((c) => c.habit_id === habitId).map((c) => c.day))).sort();
+  if (sortedDays.length === 0) return 0;
+  let best = 1;
+  let current = 1;
+
+  for (let i = 1; i < sortedDays.length; i++) {
+    const prev = new Date(sortedDays[i - 1]);
+    const next = new Date(sortedDays[i]);
+    const diffDays = Math.round((next.getTime() - prev.getTime()) / (1000 * 3600 * 24));
+    if (diffDays === 1) {
+      current += 1;
+      if (current > best) best = current;
+    } else {
+      current = 1;
+    }
+  }
+  return best;
 };
 
 // Daily audit aggregate: minutes of logged activity per day for the last `days`.

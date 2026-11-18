@@ -22,6 +22,9 @@ export type Task = {
   habit_days: string | null;
   habit_color: string | null;
   section_id?: string | null;
+  habit_type?: "boolean" | "quantity"; // 'boolean' (yes/no) or 'quantity' (e.g. glasses, km, pages)
+  habit_target_value?: number | null; // target quantity (e.g. 8)
+  habit_unit?: string | null; // custom unit name (e.g. "glasses", "pages", "km")
 };
 
 export type Section = {
@@ -92,6 +95,7 @@ export type HabitCheck = {
   id: number;
   habit_id: string;
   day: string; // YYYY-MM-DD
+  value?: number; // logged value for quantity habits (defaults to 1 for boolean)
 };
 
 export type Subtask = {
@@ -222,7 +226,19 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
   try {
     await db.execAsync("ALTER TABLE tasks ADD COLUMN section_id TEXT");
   } catch {}
-  await db.execAsync("CREATE TABLE IF NOT EXISTS habit_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, habit_id TEXT NOT NULL, day TEXT NOT NULL, UNIQUE(habit_id, day))");
+  try {
+    await db.execAsync("ALTER TABLE tasks ADD COLUMN habit_type TEXT DEFAULT 'boolean'");
+  } catch {}
+  try {
+    await db.execAsync("ALTER TABLE tasks ADD COLUMN habit_target_value REAL DEFAULT 1");
+  } catch {}
+  try {
+    await db.execAsync("ALTER TABLE tasks ADD COLUMN habit_unit TEXT");
+  } catch {}
+  try {
+    await db.execAsync("ALTER TABLE habit_checks ADD COLUMN value REAL DEFAULT 1");
+  } catch {}
+  await db.execAsync("CREATE TABLE IF NOT EXISTS habit_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, habit_id TEXT NOT NULL, day TEXT NOT NULL, value REAL DEFAULT 1, UNIQUE(habit_id, day))");
   await db.execAsync("CREATE TABLE IF NOT EXISTS subtasks (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, title TEXT NOT NULL, done INTEGER DEFAULT 0, sort INTEGER DEFAULT 0, created_at INTEGER NOT NULL)");
   await db.execAsync("CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT DEFAULT '#0B6E46', sort INTEGER DEFAULT 0, created_at INTEGER NOT NULL)");
   await db.execAsync("CREATE TABLE IF NOT EXISTS task_dependencies (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, depends_on_task_id TEXT NOT NULL, UNIQUE(task_id, depends_on_task_id))");
