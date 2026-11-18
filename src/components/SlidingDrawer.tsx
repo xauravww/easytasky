@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -8,6 +8,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,11 +40,18 @@ type Props = {
 export default function SlidingDrawer({ onSelectOption }: Props) {
   const insets = useSafeAreaInsets();
   const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const sections = useStore((s) => s.sections);
   const sectionFilter = useStore((s) => s.sectionFilter);
   const setSectionFilter = useStore((s) => s.setSectionFilter);
   const tasks = useStore((s) => s.tasks);
+
+  const filteredSections = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sections;
+    return sections.filter((s) => s.name.toLowerCase().includes(q));
+  }, [sections, search]);
 
   // Position of drawer slide (-DRAWER_WIDTH is offscreen, 0 is fully open)
   const [drawerX] = useState(() => new Animated.Value(-DRAWER_WIDTH));
@@ -144,44 +152,72 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
                 </Pressable>
               </View>
 
+              {/* Search Filter for Categories */}
+              <View style={styles.searchRow}>
+                <Ionicons name="search" size={15} color={SUB} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Filter categories…"
+                  placeholderTextColor="#666666"
+                  clearButtonMode="while-editing"
+                />
+                {search.length > 0 && (
+                  <Pressable onPress={() => setSearch("")} hitSlop={6}>
+                    <Ionicons name="close-circle" size={16} color={SUB} />
+                  </Pressable>
+                )}
+              </View>
+
               {/* Clean Categories List */}
               <View style={styles.categoriesSection}>
                 {/* "All Tasks" option */}
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.categoryRow,
-                    sectionFilter === null && styles.categoryRowActive,
-                    pressed && styles.categoryRowPressed,
-                  ]}
-                  onPress={() => handleSelectCategory(null)}
-                >
-                  <View style={styles.categoryLeft}>
-                    <View style={[styles.categoryDot, { backgroundColor: ACCENT }]} />
-                    <Text
-                      style={[
-                        styles.categoryName,
-                        sectionFilter === null && styles.categoryNameActive,
-                      ]}
-                    >
-                      All Tasks
+                {!search && (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.categoryRow,
+                      sectionFilter === null && styles.categoryRowActive,
+                      pressed && styles.categoryRowPressed,
+                    ]}
+                    onPress={() => handleSelectCategory(null)}
+                  >
+                    <View style={styles.categoryLeft}>
+                      <View style={[styles.categoryDot, { backgroundColor: ACCENT }]} />
+                      <Text
+                        style={[
+                          styles.categoryName,
+                          sectionFilter === null && styles.categoryNameActive,
+                        ]}
+                      >
+                        All Tasks
+                      </Text>
+                    </View>
+                    <Text style={styles.categoryCount}>
+                      {tasks.filter((t) => t.status !== "done" && t.status !== "habit").length}
                     </Text>
-                  </View>
-                  <Text style={styles.categoryCount}>
-                    {tasks.filter((t) => t.status !== "done" && t.status !== "habit").length}
-                  </Text>
-                </Pressable>
+                  </Pressable>
+                )}
 
                 <FlatList
-                  data={sections}
+                  data={filteredSections}
                   keyExtractor={(item) => item.id}
                   showsVerticalScrollIndicator={false}
-                  initialNumToRender={15}
+                  initialNumToRender={12}
                   maxToRenderPerBatch={10}
                   windowSize={5}
+                  getItemLayout={(_, index) => ({
+                    length: 44,
+                    offset: 44 * index,
+                    index,
+                  })}
+                  keyboardShouldPersistTaps="handled"
                   contentContainerStyle={{ paddingVertical: 4 }}
                   ListEmptyComponent={
                     <View style={styles.emptyCategories}>
-                      <Text style={styles.emptyCategoriesText}>No custom categories yet.</Text>
+                      <Text style={styles.emptyCategoriesText}>
+                        {search ? "No matching categories" : "No custom categories yet."}
+                      </Text>
                     </View>
                   }
                   renderItem={({ item }) => {
@@ -313,8 +349,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
-    paddingBottom: 12,
+    marginBottom: 10,
+    paddingBottom: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: LINE,
   },
@@ -330,6 +366,25 @@ const styles = StyleSheet.create({
   },
   closeDrawerBtn: {
     padding: 4,
+  },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: CARD,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: LINE,
+    paddingHorizontal: 10,
+    height: 36,
+    marginBottom: 12,
+    gap: 6,
+  },
+  searchInput: {
+    flex: 1,
+    color: TEXT,
+    fontSize: 13,
+    paddingVertical: 0,
+    height: "100%",
   },
   categoriesSection: {
     flex: 1,
