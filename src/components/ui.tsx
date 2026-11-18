@@ -122,33 +122,130 @@ export const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children
   <Text style={s.sectionTitle}>{children}</Text>
 );
 
-type BtnKind = "primary" | "ghost" | "tonal" | "outlined";
+type BtnKind = "primary" | "ghost" | "tonal" | "outlined" | "danger";
 export const Button: React.FC<{
   onPress: () => void;
   title: string;
   kind?: BtnKind;
   icon?: string;
   disabled?: boolean;
-}> = ({ onPress, title, kind = "primary", icon, disabled }) => {
-  const tonal = kind === "ghost" || kind === "tonal";
-  const base = kind === "primary" ? s.btnFilled : kind === "outlined" ? s.btnOutlined : s.btnTonal;
+  size?: "sm" | "md" | "lg";
+  style?: StyleProp<ViewStyle>;
+}> = ({ onPress, title, kind = "primary", icon, disabled, size = "md", style }) => {
+  const base =
+    kind === "primary"
+      ? s.btnFilled
+      : kind === "outlined"
+      ? s.btnOutlined
+      : kind === "danger"
+      ? { backgroundColor: COLORS.dangerSoft, borderWidth: 1, borderColor: COLORS.danger }
+      : s.btnTonal;
   const textStyle =
-    kind === "primary" ? s.btnFilledText : kind === "outlined" ? s.btnOutlinedText : s.btnTonalText;
-  void tonal;
+    kind === "primary"
+      ? s.btnFilledText
+      : kind === "outlined"
+      ? s.btnOutlinedText
+      : kind === "danger"
+      ? { color: COLORS.danger, fontWeight: "700" as const, fontSize: TYPE.body }
+      : s.btnTonalText;
+
+  const sizeStyle =
+    size === "sm"
+      ? { minHeight: 36, paddingHorizontal: 12, borderRadius: 10 }
+      : size === "lg"
+      ? { minHeight: 52, paddingHorizontal: 22, borderRadius: 16 }
+      : {};
+
+  const iconColor =
+    kind === "primary" ? COLORS.onPrimary : kind === "danger" ? COLORS.danger : COLORS.primary;
+
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      style={({ pressed }) => [s.btn, base, pressed && { opacity: 0.8 }, disabled && s.btnDisabled]}
+      style={({ pressed }) => [s.btn, base, sizeStyle, style, pressed && { opacity: 0.8 }, disabled && s.btnDisabled]}
     >
       {icon ? (
-        <Ionicons name={icon as never} size={18} color={kind === "primary" ? COLORS.onPrimary : COLORS.primary} />
+        <Ionicons name={icon as never} size={size === "sm" ? 15 : 18} color={iconColor} />
       ) : null}
-      <Text style={textStyle}>{title}</Text>
+      <Text style={[textStyle, size === "sm" && { fontSize: TYPE.label }]}>{title}</Text>
     </Pressable>
   );
 };
+
+export const IconButton: React.FC<{
+  icon: string;
+  onPress: () => void;
+  size?: number;
+  color?: string;
+  bg?: string;
+  border?: boolean;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
+}> = ({
+  icon,
+  onPress,
+  size = 20,
+  color = COLORS.ink,
+  bg = "transparent",
+  border = false,
+  disabled = false,
+  style,
+  accessibilityLabel,
+}) => (
+  <Pressable
+    onPress={onPress}
+    disabled={disabled}
+    accessibilityRole="button"
+    accessibilityLabel={accessibilityLabel}
+    style={({ pressed }) => [
+      {
+        width: size + 18,
+        height: size + 18,
+        borderRadius: (size + 18) / 2,
+        backgroundColor: bg,
+        alignItems: "center",
+        justifyContent: "center",
+        borderWidth: border ? 1 : 0,
+        borderColor: COLORS.line,
+        opacity: disabled ? 0.4 : pressed ? 0.75 : 1,
+      },
+      style,
+    ]}
+  >
+    <Ionicons name={icon as never} size={size} color={color} />
+  </Pressable>
+);
+
+export const Badge: React.FC<{
+  count?: number | string;
+  color?: string;
+  bg?: string;
+  style?: StyleProp<ViewStyle>;
+}> = ({ count, color = "#FFFFFF", bg = COLORS.accent, style }) => {
+  if (count === undefined || count === null || count === "") return null;
+  return (
+    <View
+      style={[
+        {
+          minWidth: 18,
+          height: 18,
+          borderRadius: 9,
+          backgroundColor: bg,
+          paddingHorizontal: 5,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        style,
+      ]}
+    >
+      <Text style={{ fontSize: 10, fontWeight: "700", color }}>{count}</Text>
+    </View>
+  );
+};
+
 
 export const Chip: React.FC<{ label: string; onPress?: () => void; active?: boolean }> = ({ label, onPress, active }) => (
   <Pressable

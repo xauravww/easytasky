@@ -72,9 +72,11 @@ export default function FocusScreen({
   };
 
   const [musicOn, setMusicOn] = useState(false);
+  const [tickOn, setTickOn] = useState(false);
   const [sheet, setSheet] = useState(false);
 
   const noise = useAudioPlayer(require("../../assets/rain.mp3"));
+  const tickAudio = useAudioPlayer(require("../../assets/tick.wav"));
 
   useEffect(() => {
     if (musicOn) {
@@ -93,6 +95,20 @@ export default function FocusScreen({
       } catch {}
     };
   }, [noise]);
+
+  // Tick-tick sound on every second when active and running
+  const prevSecRef = useRef<number>(-1);
+  useEffect(() => {
+    if (tickOn && pomo.running) {
+      if (prevSecRef.current !== pomo.left) {
+        prevSecRef.current = pomo.left;
+        try {
+          tickAudio.seekTo(0);
+          tickAudio.play();
+        } catch {}
+      }
+    }
+  }, [tickOn, pomo.running, pomo.left, tickAudio]);
 
   const { running, phase, left, totalSec, mode } = pomo;
   const inBreak = phase === "break";
@@ -203,7 +219,7 @@ export default function FocusScreen({
         </Pressable>
 
         <View style={styles.controls}>
-          <Pressable style={styles.sideBtn} onPress={() => setMusicOn((v) => !v)} accessibilityRole="button">
+          <Pressable style={styles.sideBtn} onPress={() => setMusicOn((v) => !v)} accessibilityRole="button" accessibilityLabel="Toggle ambient sound">
             <Ionicons name={musicOn ? "musical-notes" : "musical-notes-outline"} size={24} color="#B8B8B8" />
           </Pressable>
 
@@ -216,8 +232,19 @@ export default function FocusScreen({
             />
           </Pressable>
 
-          <Pressable style={styles.sideBtn} onPress={finishPomo} accessibilityRole="button">
+          <Pressable style={styles.sideBtn} onPress={finishPomo} accessibilityRole="button" accessibilityLabel="Stop session">
             <Ionicons name="stop" size={26} color="#B8B8B8" />
+          </Pressable>
+
+          {/* Tiny tick-tick sound toggle button (Item 7) */}
+          <Pressable
+            style={[styles.tickBtn, tickOn && styles.tickBtnActive]}
+            onPress={() => setTickOn((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle tick tick sound"
+          >
+            <Ionicons name="timer" size={14} color={tickOn ? ACCENT : "#666666"} />
+            <Text style={[styles.tickBtnText, tickOn && styles.tickBtnTextActive]}>tick</Text>
           </Pressable>
         </View>
 
@@ -298,6 +325,33 @@ const styles = StyleSheet.create({
     borderColor: "#3A3A3A",
     alignItems: "center",
     justifyContent: "center",
+  },
+  tickBtn: {
+    position: "absolute",
+    right: -28,
+    bottom: -18,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#333333",
+    backgroundColor: "#161616",
+  },
+  tickBtnActive: {
+    borderColor: ACCENT,
+    backgroundColor: "rgba(250,110,30,0.15)",
+  },
+  tickBtnText: {
+    fontSize: 10,
+    color: "#666666",
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  tickBtnTextActive: {
+    color: ACCENT,
   },
   mainBtn: {
     width: 84,

@@ -323,6 +323,35 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "create_section",
+      description: "Create a new category/section to group tasks.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Name of the section or category" },
+          color: { type: "string", description: "Hex color code e.g. #0B6E46, #FA6E1E, #3B82F6" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_section",
+      description: "Delete an existing category/section.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Name of the section to delete" },
+        },
+        required: ["name"],
+      },
+    },
+  },
 ] as const;
 
 // One-shot completion that may return tool calls. Returns either a text reply or

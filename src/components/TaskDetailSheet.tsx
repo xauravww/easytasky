@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Markdown from "react-native-markdown-display";
@@ -7,6 +7,7 @@ import type { Task } from "../db/database";
 import { fmtDue } from "../utils/taskFormat";
 import { dayKey } from "../utils/time";
 import { useStore } from "../store/useStore";
+import CustomTimePicker from "./CustomTimePicker";
 
 const SHEET = "#1A1A1A";
 const FIELD_BG = "#1E1E1E";
@@ -38,7 +39,21 @@ type Props = {
 
 export default function TaskDetailSheet({ task, onClose }: Props) {
   const insets = useSafeAreaInsets();
-  const { subtasks, updateTask, deleteTask, addSubtask, toggleSubtask, deleteSubtask, startFocusFor } = useStore();
+  const {
+    tasks,
+    subtasks,
+    dependencies,
+    sections,
+    updateTask,
+    deleteTask,
+    addSubtask,
+    toggleSubtask,
+    deleteSubtask,
+    startFocusFor,
+    addDependency,
+    removeDependency,
+    canCompleteTask,
+  } = useStore();
 
   const [title, setTitle] = useState(task.title);
   const [note, setNote] = useState(task.note ?? "");
@@ -46,8 +61,17 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
   const [energy, setEnergy] = useState<Task["energy"]>(task.energy);
   const [repeatRule, setRepeatRule] = useState(task.repeat_rule ?? null);
   const [remindTime, setRemindTime] = useState(task.remind_time ?? null);
+  const [sectionId, setSectionId] = useState(task.section_id ?? null);
   const [subInput, setSubInput] = useState("");
   const [editingNote, setEditingNote] = useState(!task.note);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  // Dependency system
+  const taskDeps = dependencies.filter((d) => d.task_id === task.id);
+  const blockerTasks = tasks.filter((t) => taskDeps.some((d) => d.depends_on_task_id === t.id));
+
+  // Eligible tasks to depend on (not self, not habits)
+  const candidateDeps = tasks.filter((t) => t.id !== task.id && !t.is_habit);
 
   const mine = subtasks.filter((s) => s.task_id === task.id);
   const doneCount = mine.filter((s) => s.done).length;
@@ -61,6 +85,7 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
       energy,
       repeat_rule: repeatRule,
       remind_time: remindTime,
+      section_id: sectionId,
     });
   };
 
@@ -222,24 +247,124 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
               ))}
             </View>
 
-            {task.due_date && (
+            {/* Section / Category selector */}
+            {sections.length > 0 && (
               <>
-                <Text style={styles.label}>Remind</Text>
+                <Text style={styles.label}>Category</Text>
                 <View style={styles.chipRow}>
-                  {([null, "09:00", "12:00", "18:00"] as const).map((r) => (
+                  <Pressable
+                    style={[styles.chip, sectionId === null && styles.chipActive]}
+                    onPress={() => { setSectionId(null); updateTask(task.id, { section_id: null }); }}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.chipText, sectionId === null && styles.chipTextActive]}>None</Text>
+                  </Pressable>
+                  {sections.map((sec) => (
                     <Pressable
-                      key={r ?? "off"}
-                      style={[styles.chip, remindTime === r && styles.chipActive]}
-                      onPress={() => { setRemindTime(r); updateTask(task.id, { remind_time: r }); }}
+                      key={sec.id}
+                      style={[styles.chip, sectionId === sec.id && styles.chipActive]}
+                      onPress={() => { setSectionId(sec.id); updateTask(task.id, { section_id: sec.id }); }}
                       accessibilityRole="button"
                     >
-                      <Text style={[styles.chipText, remindTime === r && styles.chipTextActive]}>
-                        {r === null ? "Off" : r}
+                      <View style={[styles.energyDot, { backgroundColor: sec.color }]} />
+                      <Text style={[styles.chipText, sectionId === sec.id && styles.chipTextActive]}>
+                        {sec.name}
                       </Text>
                     </Pressable>
                   ))}
                 </View>
               </>
+            )}
+
+            {/* Custom Time Picker Remind Setting (Item 16) */}
+            {task.due_date && (
+              <>
+                <Text style={styles.label}>Reminder Time</Text>
+                <View style={styles.chipRow}>
+                  <Pressable
+                    style={[styles.chip, remindTime !== null && styles.chipActive]}
+                    onPress={() => setShowTimePicker(true)}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="time-outline" size={15} color={remindTime ? ACCENT : SUB} />
+                    <Text style={[styles.chipText, remindTime !== null && styles.chipTextActive]}>
+                      {remindTime ? remindTime : "Set Custom Time"}
+                    </Text>
+                  </Pressable>
+                  {remindTime !== null && (
+                    <Pressable
+                      style={styles.chip}
+                      onPress={() => {
+                        setRemindTime(null);
+                        updateTask(task.id, { remind_time: null });
+                      }}
+                      accessibilityRole="button"
+                    >
+                      <Ionicons name="close-circle" size={15} color={SUB} />
+                      <Text style={styles.chipText}>Clear</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </>
+            )}
+
+            {/* Task Dependency System (Item 17) */}
+            <Text style={styles.label}>Dependencies (Prerequisites)</Text>
+            {blockerTasks.length > 0 ? (
+              <View style={styles.depList}>
+                {blockerTasks.map((dep) => (
+                  <View key={dep.id} style={styles.depItem}>
+                    <Ionicons
+                      name={dep.status === "done" ? "checkmark-circle" : "alert-circle"}
+                      size={16}
+                      color={dep.status === "done" ? TEAL : RED}
+                    />
+                    <Text
+                      style={[
+                        styles.depTitle,
+                        dep.status === "done" && { textDecorationLine: "line-through", color: SUB },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {dep.title}
+                    </Text>
+                    <Pressable
+                      onPress={() => removeDependency(task.id, dep.id)}
+                      style={{ padding: 4 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Remove dependency"
+                    >
+                      <Ionicons name="close" size={16} color={SUB} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.depEmptyText}>No prerequisite dependencies set.</Text>
+            )}
+
+            {/* Add dependency picker */}
+            {candidateDeps.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                <View style={styles.chipRow}>
+                  {candidateDeps
+                    .filter((c) => !blockerTasks.some((b) => b.id === c.id))
+                    .slice(0, 8)
+                    .map((c) => (
+                      <Pressable
+                        key={c.id}
+                        style={styles.chip}
+                        onPress={() => addDependency(task.id, c.id)}
+                        accessibilityRole="button"
+                      >
+                        <Ionicons name="link-outline" size={13} color={SUB} />
+                        <Text style={styles.chipText} numberOfLines={1}>
+                          + Depends on: {c.title}
+                        </Text>
+                      </Pressable>
+                    ))}
+                </View>
+              </ScrollView>
             )}
 
             <View style={styles.divider} />
@@ -255,7 +380,20 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
             </Pressable>
             <Pressable
               style={styles.actionRow}
-              onPress={() => { updateTask(task.id, { status: task.status === "done" ? "inbox" : "done" }); onClose(); }}
+              onPress={() => {
+                if (task.status !== "done") {
+                  const check = canCompleteTask(task.id);
+                  if (!check.allowed) {
+                    Alert.alert(
+                      "Task Blocked",
+                      `You cannot complete this task until its prerequisite tasks are finished:\n\n• ${check.blockingTasks.map((t) => t.title).join("\n• ")}`
+                    );
+                    return;
+                  }
+                }
+                updateTask(task.id, { status: task.status === "done" ? "inbox" : "done" });
+                onClose();
+              }}
               accessibilityRole="button"
             >
               <Ionicons name="checkmark-circle-outline" size={22} color={task.status === "done" ? IDLE : TEAL} />
@@ -272,6 +410,22 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+
+      <CustomTimePicker
+        visible={showTimePicker}
+        initialTime={remindTime}
+        onConfirm={(timeStr) => {
+          setRemindTime(timeStr);
+          updateTask(task.id, { remind_time: timeStr });
+          setShowTimePicker(false);
+        }}
+        onClear={() => {
+          setRemindTime(null);
+          updateTask(task.id, { remind_time: null });
+          setShowTimePicker(false);
+        }}
+        onClose={() => setShowTimePicker(false)}
+      />
     </Modal>
   );
 }
@@ -378,4 +532,18 @@ const styles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: LINE, marginVertical: 14 },
   actionRow: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 13 },
   actionText: { color: TEXT, fontSize: 16 },
+  depList: { gap: 8, marginBottom: 8 },
+  depItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: FIELD_BG,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: LINE,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  depTitle: { flex: 1, color: TEXT, fontSize: 13 },
+  depEmptyText: { color: SUB, fontSize: 12, fontStyle: "italic", marginBottom: 6 },
 });

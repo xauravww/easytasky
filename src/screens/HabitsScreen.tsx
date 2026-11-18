@@ -62,7 +62,8 @@ export default function HabitsScreen() {
   };
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <View style={styles.root}>
+      <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.h1}>Habits</Text>
@@ -214,6 +215,7 @@ export default function HabitsScreen() {
         );
       })}
     </ScrollView>
+    </View>
   );
 }
 

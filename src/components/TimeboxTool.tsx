@@ -16,10 +16,10 @@ const SUB = "#9C9C9C";
 const IDLE = "#6F6F6F";
 const ACCENT = "#FA6E1E";
 
-const DAY_START = 6 * 60; // 06:00
-const DAY_END = 22 * 60; // 22:00
-const HOUR_H = 56;
-const GUTTER = 40; // width of the hour-label column
+const DAY_START = 0; // 00:00 (full 24h)
+const DAY_END = 24 * 60; // 24:00 (full 24h)
+const DEFAULT_HOUR_H = 56;
+const GUTTER = 44; // width of the hour-label column
 
 const TYPE_COLOR: Record<string, string> = {
   deep: "#FA6E1E",
@@ -123,6 +123,8 @@ export default function TimeboxTool() {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
+  const [hourH, setHourH] = useState(DEFAULT_HOUR_H);
+
   // "Now" indicator: current time in minutes since midnight, refreshed each minute.
   const [nowMin, setNowMin] = useState(() => {
     const n = new Date();
@@ -142,7 +144,7 @@ export default function TimeboxTool() {
   );
 
   const totalMin = todays.reduce((s, b) => s + (b.end_min - b.start_min), 0);
-  const timelineH = ((DAY_END - DAY_START) / 60) * HOUR_H;
+  const timelineH = ((DAY_END - DAY_START) / 60) * hourH;
   const selected = todays.find((b) => b.id === selectedId) ?? null;
   const layout = useMemo(() => layoutBlocks(todays), [todays]);
 
@@ -210,20 +212,40 @@ export default function TimeboxTool() {
     <View style={styles.root}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, minWidth: 100 }}>
           <Text style={styles.title}>Today</Text>
           <Text style={styles.sub}>
             {todays.length} blocks · {Math.round(totalMin / 60)}h planned
           </Text>
         </View>
-        <Pressable style={styles.bufferBtn} onPress={addBuffers} accessibilityRole="button" accessibilityLabel="Add 20% buffer">
-          <Ionicons name="hourglass-outline" size={18} color={ACCENT} />
-          <Text style={styles.bufferBtnText}>20% buffer</Text>
-        </Pressable>
-        <Pressable style={styles.addBtn} onPress={openAdd} accessibilityRole="button">
-          <Ionicons name="add" size={20} color="#FFFFFF" />
-          <Text style={styles.addBtnText}>Block</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <View style={styles.zoomGroup}>
+            <Pressable
+              style={styles.zoomBtn}
+              onPress={() => setHourH((h) => Math.max(32, h - 8))}
+              accessibilityRole="button"
+              accessibilityLabel="Zoom out timeline"
+            >
+              <Ionicons name="remove" size={16} color={SUB} />
+            </Pressable>
+            <Pressable
+              style={styles.zoomBtn}
+              onPress={() => setHourH((h) => Math.min(100, h + 8))}
+              accessibilityRole="button"
+              accessibilityLabel="Zoom in timeline"
+            >
+              <Ionicons name="add" size={16} color={SUB} />
+            </Pressable>
+          </View>
+          <Pressable style={styles.bufferBtn} onPress={addBuffers} accessibilityRole="button" accessibilityLabel="Add 20% buffer">
+            <Ionicons name="hourglass-outline" size={16} color={ACCENT} />
+            <Text style={styles.bufferBtnText}>+20% buffer</Text>
+          </Pressable>
+          <Pressable style={styles.addBtn} onPress={openAdd} accessibilityRole="button">
+            <Ionicons name="add" size={18} color="#FFFFFF" />
+            <Text style={styles.addBtnText}>Block</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Timeline */}
@@ -232,7 +254,7 @@ export default function TimeboxTool() {
           {/* Hour labels */}
           <View style={styles.labels}>
             {hours.map((h) => (
-              <View key={h} style={{ height: HOUR_H, justifyContent: "flex-start" }}>
+              <View key={h} style={{ height: hourH, justifyContent: "flex-start" }}>
                 <Text style={styles.hourLabel}>{h}:00</Text>
               </View>
             ))}
@@ -241,14 +263,14 @@ export default function TimeboxTool() {
           {/* Grid + blocks */}
           <View style={styles.gridArea}>
             {hours.map((h) => (
-              <View key={h} style={[styles.gridlineRow, { height: HOUR_H }]} />
+              <View key={h} style={[styles.gridlineRow, { height: hourH }]} />
             ))}
             {nowMin >= DAY_START && nowMin <= DAY_END && (
-              <View style={[styles.nowBar, { top: ((nowMin - DAY_START) / 60) * HOUR_H }]} pointerEvents="none" />
+              <View style={[styles.nowBar, { top: ((nowMin - DAY_START) / 60) * hourH }]} pointerEvents="none" />
             )}
             {todays.map((b) => {
-              const top = ((b.start_min - DAY_START) / 60) * HOUR_H;
-              const height = ((b.end_min - b.start_min) / 60) * HOUR_H;
+              const top = ((b.start_min - DAY_START) / 60) * hourH;
+              const height = ((b.end_min - b.start_min) / 60) * hourH;
               const color = TYPE_COLOR[b.type] ?? ACCENT;
               const isSel = selectedId === b.id;
               const slot = layout.get(b.id) ?? { leftPct: 0.5, widthPct: 99 };
@@ -361,13 +383,42 @@ export default function TimeboxTool() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  zoomGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: CARD,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: LINE,
+    paddingHorizontal: 4,
+  },
+  zoomBtn: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   title: { color: TEXT, fontSize: 22, fontWeight: "700" },
   sub: { color: SUB, fontSize: 13, marginTop: 2 },
-  addBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: ACCENT, borderRadius: 999, paddingHorizontal: 14, minHeight: 40 },
-  addBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
-  bufferBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1.5, borderColor: ACCENT, borderRadius: 999, paddingHorizontal: 12, minHeight: 40 },
-  bufferBtnText: { color: ACCENT, fontWeight: "700", fontSize: 13 },
+  addBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: ACCENT, borderRadius: 999, paddingHorizontal: 12, minHeight: 38 },
+  addBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
+  bufferBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1.5, borderColor: ACCENT, borderRadius: 999, paddingHorizontal: 10, minHeight: 38 },
+  bufferBtnText: { color: ACCENT, fontWeight: "700", fontSize: 12 },
   timelineRow: { flexDirection: "row", flex: 1 },
   labels: { width: GUTTER, paddingTop: 2 },
   hourLabel: { color: IDLE, fontSize: 11, paddingLeft: 4 },

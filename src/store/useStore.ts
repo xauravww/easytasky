@@ -1,7 +1,19 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getDb, loadAll } from "../db/database";
-import type { ActivityLog, HabitCheck, PomoSession, Subtask, Task, TimeBlock } from "../db/database";
+import type {
+  ActivityLog,
+  DailyNote,
+  HabitCheck,
+  PomoSession,
+  Section,
+  ShutdownCheck,
+  ShutdownRitual,
+  Subtask,
+  Task,
+  TaskDependency,
+  TimeBlock,
+} from "../db/database";
 import { dayKey, uid } from "../utils/time";
 import { syncTaskReminders } from "../lib/notifications";
 import { loadAiConfig } from "../lib/aiClient";
@@ -59,6 +71,11 @@ type StoreState = {
   pomos: PomoSession[];
   habitChecks: HabitCheck[];
   subtasks: Subtask[];
+  sections: Section[];
+  dependencies: TaskDependency[];
+  dailyNotes: DailyNote[];
+  shutdownRituals: ShutdownRitual[];
+  shutdownChecks: ShutdownCheck[];
   pomo: PomoState;
   focusReq: number;
   taskFilter: string | null;
@@ -72,6 +89,25 @@ type StoreState = {
   addSubtask: (taskId: string, title: string) => Promise<void>;
   toggleSubtask: (id: string) => Promise<void>;
   deleteSubtask: (id: string) => Promise<void>;
+  // Sections CRUD
+  addSection: (name: string, color?: string) => Promise<Section>;
+  updateSection: (id: string, patch: Partial<Section>) => Promise<void>;
+  deleteSection: (id: string) => Promise<void>;
+  // Dependencies
+  addDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
+  removeDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
+  canCompleteTask: (taskId: string) => { allowed: boolean; blockingTasks: Task[] };
+  // Daily Notes (Next Day Notebook)
+  saveDailyNote: (day: string, content: string) => Promise<void>;
+  getDailyNote: (day: string) => string;
+  // Shutdown Rituals
+  addShutdownRitual: (title: string) => Promise<void>;
+  updateShutdownRitual: (id: string, patch: Partial<ShutdownRitual>) => Promise<void>;
+  deleteShutdownRitual: (id: string) => Promise<void>;
+  toggleShutdownCheck: (ritualId: string, day: string) => Promise<void>;
+  // Backup / Restore
+  exportDataJson: () => Promise<string>;
+  importDataJson: (jsonStr: string) => Promise<{ success: boolean; error?: string }>;
   setFocusMin: (n: number) => void;
   setBreakMin: (n: number) => void;
   setTaskId: (id: string) => void;
@@ -102,6 +138,11 @@ export const useStore = create<StoreState>((set, get) => ({
   pomos: [],
   habitChecks: [],
   subtasks: [],
+  sections: [],
+  dependencies: [],
+  dailyNotes: [],
+  shutdownRituals: [],
+  shutdownChecks: [],
   focusReq: 0,
   taskFilter: null,
   tasksReq: 0,
@@ -325,11 +366,12 @@ export const useStore = create<StoreState>((set, get) => ({
       habit_freq: t.habit_freq ?? null,
       habit_days: t.habit_days ?? null,
       habit_color: t.habit_color ?? null,
+      section_id: t.section_id ?? null,
     };
     await db.runAsync(
-      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,remind_time,is_habit,habit_freq,habit_days,habit_color)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.note, task.repeat_rule, task.remind_time, task.is_habit, task.habit_freq, task.habit_days, task.habit_color]
+      `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,remind_time,is_habit,habit_freq,habit_days,habit_color,section_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [task.id, task.title, task.context, task.energy, task.quadrant, task.status, task.delegate_note, task.created_at, task.due_date, task.estimated_min, task.actual_min, task.timebox_end, task.note, task.repeat_rule, task.remind_time, task.is_habit, task.habit_freq, task.habit_days, task.habit_color, task.section_id ?? null]
     );
     set({ tasks: [task, ...get().tasks] });
     void syncTaskReminders(get().tasks);
@@ -341,8 +383,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!cur) return;
     const next = { ...cur, ...patch };
     await db.runAsync(
-      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, remind_time=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=? WHERE id=?`,
-      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.repeat_rule ?? null, next.remind_time ?? null, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, id]
+      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, remind_time=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=?, section_id=? WHERE id=?`,
+      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.repeat_rule ?? null, next.remind_time ?? null, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, next.section_id ?? null, id]
     );
     set({ tasks: get().tasks.map((t) => (t.id === id ? next : t)) });
     void syncTaskReminders(get().tasks);
@@ -388,10 +430,12 @@ export const useStore = create<StoreState>((set, get) => ({
     await db.runAsync("DELETE FROM tasks WHERE id = ?", [id]);
     await db.runAsync("DELETE FROM habit_checks WHERE habit_id = ?", [id]);
     await db.runAsync("DELETE FROM subtasks WHERE task_id = ?", [id]);
+    await db.runAsync("DELETE FROM task_dependencies WHERE task_id = ? OR depends_on_task_id = ?", [id, id]);
     set({
       tasks: get().tasks.filter((t) => t.id !== id),
       habitChecks: get().habitChecks.filter((c) => c.habit_id !== id),
       subtasks: get().subtasks.filter((s) => s.task_id !== id),
+      dependencies: get().dependencies.filter((d) => d.task_id !== id && d.depends_on_task_id !== id),
     });
     void syncTaskReminders(get().tasks);
   },
@@ -484,6 +528,289 @@ export const useStore = create<StoreState>((set, get) => ({
     }
     const pomos = await db.getAllAsync<PomoSession>("SELECT * FROM pomodoro_sessions ORDER BY started_at");
     set({ pomos: mapRows(pomos) });
+  },
+
+  // ---- Sections CRUD ----
+  addSection: async (name, color = "#0B6E46") => {
+    const db = await getDb();
+    const sec: Section = {
+      id: uid(),
+      name: name.trim(),
+      color,
+      sort: get().sections.length,
+      created_at: Date.now(),
+    };
+    await db.runAsync("INSERT INTO sections (id, name, color, sort, created_at) VALUES (?, ?, ?, ?, ?)", [
+      sec.id,
+      sec.name,
+      sec.color,
+      sec.sort,
+      sec.created_at,
+    ]);
+    set({ sections: [...get().sections, sec] });
+    return sec;
+  },
+
+  updateSection: async (id, patch) => {
+    const db = await getDb();
+    const cur = get().sections.find((s) => s.id === id);
+    if (!cur) return;
+    const next = { ...cur, ...patch };
+    await db.runAsync("UPDATE sections SET name = ?, color = ?, sort = ? WHERE id = ?", [
+      next.name,
+      next.color,
+      next.sort,
+      id,
+    ]);
+    set({ sections: get().sections.map((s) => (s.id === id ? next : s)) });
+  },
+
+  deleteSection: async (id) => {
+    const db = await getDb();
+    await db.runAsync("DELETE FROM sections WHERE id = ?", [id]);
+    await db.runAsync("UPDATE tasks SET section_id = NULL WHERE section_id = ?", [id]);
+    set({
+      sections: get().sections.filter((s) => s.id !== id),
+      tasks: get().tasks.map((t) => (t.section_id === id ? { ...t, section_id: null } : t)),
+    });
+  },
+
+  // ---- Task Dependencies ----
+  addDependency: async (taskId, dependsOnTaskId) => {
+    if (taskId === dependsOnTaskId) return;
+    const db = await getDb();
+    const id = uid();
+    await db.runAsync("INSERT OR IGNORE INTO task_dependencies (id, task_id, depends_on_task_id) VALUES (?, ?, ?)", [
+      id,
+      taskId,
+      dependsOnTaskId,
+    ]);
+    const deps = await db.getAllAsync<TaskDependency>("SELECT * FROM task_dependencies");
+    set({ dependencies: mapRows(deps) });
+  },
+
+  removeDependency: async (taskId, dependsOnTaskId) => {
+    const db = await getDb();
+    await db.runAsync("DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_task_id = ?", [
+      taskId,
+      dependsOnTaskId,
+    ]);
+    set({
+      dependencies: get().dependencies.filter(
+        (d) => !(d.task_id === taskId && d.depends_on_task_id === dependsOnTaskId)
+      ),
+    });
+  },
+
+  canCompleteTask: (taskId) => {
+    const { tasks, dependencies } = get();
+    const blockerDepIds = dependencies.filter((d) => d.task_id === taskId).map((d) => d.depends_on_task_id);
+    if (blockerDepIds.length === 0) return { allowed: true, blockingTasks: [] };
+    const blockingTasks = tasks.filter((t) => blockerDepIds.includes(t.id) && t.status !== "done");
+    return {
+      allowed: blockingTasks.length === 0,
+      blockingTasks,
+    };
+  },
+
+  // ---- Daily Notes (Next Day Notebook) ----
+  saveDailyNote: async (day, content) => {
+    const db = await getDb();
+    const existing = get().dailyNotes.find((n) => n.day === day);
+    const now = Date.now();
+    if (existing) {
+      await db.runAsync("UPDATE daily_notes SET content = ?, updated_at = ? WHERE day = ?", [content, now, day]);
+      set({
+        dailyNotes: get().dailyNotes.map((n) => (n.day === day ? { ...n, content, updated_at: now } : n)),
+      });
+    } else {
+      const id = uid();
+      await db.runAsync("INSERT INTO daily_notes (id, day, content, updated_at) VALUES (?, ?, ?, ?)", [
+        id,
+        day,
+        content,
+        now,
+      ]);
+      set({ dailyNotes: [{ id, day, content, updated_at: now }, ...get().dailyNotes] });
+    }
+  },
+
+  getDailyNote: (day) => {
+    return get().dailyNotes.find((n) => n.day === day)?.content ?? "";
+  },
+
+  // ---- Shutdown Rituals ----
+  addShutdownRitual: async (title) => {
+    const clean = title.trim();
+    if (!clean) return;
+    const db = await getDb();
+    const id = uid();
+    const ritual: ShutdownRitual = {
+      id,
+      title: clean,
+      sort: get().shutdownRituals.length,
+      enabled: 1,
+    };
+    await db.runAsync("INSERT INTO shutdown_rituals (id, title, sort, enabled) VALUES (?, ?, ?, ?)", [
+      ritual.id,
+      ritual.title,
+      ritual.sort,
+      ritual.enabled,
+    ]);
+    set({ shutdownRituals: [...get().shutdownRituals, ritual] });
+  },
+
+  updateShutdownRitual: async (id, patch) => {
+    const db = await getDb();
+    const cur = get().shutdownRituals.find((r) => r.id === id);
+    if (!cur) return;
+    const next = { ...cur, ...patch };
+    await db.runAsync("UPDATE shutdown_rituals SET title = ?, sort = ?, enabled = ? WHERE id = ?", [
+      next.title,
+      next.sort,
+      next.enabled,
+      id,
+    ]);
+    set({ shutdownRituals: get().shutdownRituals.map((r) => (r.id === id ? next : r)) });
+  },
+
+  deleteShutdownRitual: async (id) => {
+    const db = await getDb();
+    await db.runAsync("DELETE FROM shutdown_rituals WHERE id = ?", [id]);
+    await db.runAsync("DELETE FROM shutdown_checks WHERE ritual_id = ?", [id]);
+    set({
+      shutdownRituals: get().shutdownRituals.filter((r) => r.id !== id),
+      shutdownChecks: get().shutdownChecks.filter((c) => c.ritual_id !== id),
+    });
+  },
+
+  toggleShutdownCheck: async (ritualId, day) => {
+    const db = await getDb();
+    const existing = get().shutdownChecks.find((c) => c.ritual_id === ritualId && c.day === day);
+    if (existing) {
+      await db.runAsync("DELETE FROM shutdown_checks WHERE ritual_id = ? AND day = ?", [ritualId, day]);
+      set({ shutdownChecks: get().shutdownChecks.filter((c) => !(c.ritual_id === ritualId && c.day === day)) });
+    } else {
+      await db.runAsync("INSERT OR IGNORE INTO shutdown_checks (ritual_id, day) VALUES (?, ?)", [ritualId, day]);
+      const checks = await db.getAllAsync<ShutdownCheck>("SELECT * FROM shutdown_checks ORDER BY day");
+      set({ shutdownChecks: mapRows(checks) });
+    }
+  },
+
+  // ---- Backup & Restore ----
+  exportDataJson: async () => {
+    const state = get();
+    const dump = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      tasks: state.tasks,
+      logs: state.logs,
+      blocks: state.blocks,
+      pomos: state.pomos,
+      habitChecks: state.habitChecks,
+      subtasks: state.subtasks,
+      sections: state.sections,
+      dependencies: state.dependencies,
+      dailyNotes: state.dailyNotes,
+      shutdownRituals: state.shutdownRituals,
+      shutdownChecks: state.shutdownChecks,
+      profile: state.profile,
+    };
+    return JSON.stringify(dump, null, 2);
+  },
+
+  importDataJson: async (jsonStr) => {
+    try {
+      const data = JSON.parse(jsonStr);
+      if (!data || typeof data !== "object") {
+        return { success: false, error: "Invalid backup JSON format." };
+      }
+      const db = await getDb();
+      // Clear and re-populate
+      await db.execAsync(`
+        DELETE FROM tasks;
+        DELETE FROM habit_checks;
+        DELETE FROM subtasks;
+        DELETE FROM activity_log;
+        DELETE FROM time_blocks;
+        DELETE FROM pomodoro_sessions;
+        DELETE FROM sections;
+        DELETE FROM task_dependencies;
+        DELETE FROM daily_notes;
+        DELETE FROM shutdown_rituals;
+        DELETE FROM shutdown_checks;
+      `);
+
+      if (Array.isArray(data.tasks)) {
+        for (const t of data.tasks) {
+          await db.runAsync(
+            `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,remind_time,is_habit,habit_freq,habit_days,habit_color,section_id)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            [t.id, t.title, t.context ?? "", t.energy ?? "medium", t.quadrant ?? null, t.status ?? "inbox", t.delegate_note ?? null, t.created_at ?? Date.now(), t.due_date ?? null, t.estimated_min ?? null, t.actual_min ?? null, t.timebox_end ?? null, t.note ?? null, t.repeat_rule ?? null, t.remind_time ?? null, t.is_habit ?? 0, t.habit_freq ?? null, t.habit_days ?? null, t.habit_color ?? null, t.section_id ?? null]
+          );
+        }
+      }
+      if (Array.isArray(data.subtasks)) {
+        for (const s of data.subtasks) {
+          await db.runAsync("INSERT INTO subtasks (id,task_id,title,done,sort,created_at) VALUES (?,?,?,?,?,?)", [
+            s.id, s.task_id, s.title, s.done ?? 0, s.sort ?? 0, s.created_at ?? Date.now()
+          ]);
+        }
+      }
+      if (Array.isArray(data.habitChecks)) {
+        for (const h of data.habitChecks) {
+          await db.runAsync("INSERT OR IGNORE INTO habit_checks (habit_id, day) VALUES (?,?)", [h.habit_id, h.day]);
+        }
+      }
+      if (Array.isArray(data.blocks)) {
+        for (const b of data.blocks) {
+          await db.runAsync(
+            "INSERT INTO time_blocks (day,start_min,end_min,label,type,buffer) VALUES (?,?,?,?,?,?)",
+            [b.day, b.start_min, b.end_min, b.label, b.type, b.buffer ?? 0]
+          );
+        }
+      }
+      if (Array.isArray(data.sections)) {
+        for (const sec of data.sections) {
+          await db.runAsync("INSERT INTO sections (id, name, color, sort, created_at) VALUES (?, ?, ?, ?, ?)", [
+            sec.id, sec.name, sec.color ?? "#0B6E46", sec.sort ?? 0, sec.created_at ?? Date.now()
+          ]);
+        }
+      }
+      if (Array.isArray(data.dependencies)) {
+        for (const dep of data.dependencies) {
+          await db.runAsync("INSERT OR IGNORE INTO task_dependencies (id, task_id, depends_on_task_id) VALUES (?, ?, ?)", [
+            dep.id ?? uid(), dep.task_id, dep.depends_on_task_id
+          ]);
+        }
+      }
+      if (Array.isArray(data.dailyNotes)) {
+        for (const dn of data.dailyNotes) {
+          await db.runAsync("INSERT INTO daily_notes (id, day, content, updated_at) VALUES (?, ?, ?, ?)", [
+            dn.id ?? uid(), dn.day, dn.content, dn.updated_at ?? Date.now()
+          ]);
+        }
+      }
+      if (Array.isArray(data.shutdownRituals)) {
+        for (const sr of data.shutdownRituals) {
+          await db.runAsync("INSERT INTO shutdown_rituals (id, title, sort, enabled) VALUES (?, ?, ?, ?)", [
+            sr.id, sr.title, sr.sort ?? 0, sr.enabled ?? 1
+          ]);
+        }
+      }
+      if (Array.isArray(data.shutdownChecks)) {
+        for (const sc of data.shutdownChecks) {
+          await db.runAsync("INSERT OR IGNORE INTO shutdown_checks (ritual_id, day) VALUES (?, ?)", [
+            sc.ritual_id, sc.day
+          ]);
+        }
+      }
+
+      await get().init();
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: (e as Error).message };
+    }
   },
 }));
 

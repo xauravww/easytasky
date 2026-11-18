@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "../store/useStore";
@@ -34,9 +34,10 @@ const QUADRANTS = [
 
 export default function TasksScreen() {
   const insets = useSafeAreaInsets();
-  const { tasks, addTask, updateTask, taskFilter, clearTaskFilter } = useStore();
+  const { tasks, sections, addTask, updateTask, taskFilter, clearTaskFilter, canCompleteTask } = useStore();
 
   const [query, setQuery] = useState("");
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
   const [quadrant, setQuadrant] = useState("urgent_important");
@@ -50,8 +51,21 @@ export default function TasksScreen() {
     const q = query.trim().toLowerCase();
     let base = q ? open.filter((t) => t.title.toLowerCase().includes(q)) : open;
     if (taskFilter) base = base.filter((t) => t.quadrant === taskFilter);
+    if (selectedSectionId) base = base.filter((t) => t.section_id === selectedSectionId);
     return base;
-  }, [open, query, taskFilter]);
+  }, [open, query, taskFilter, selectedSectionId]);
+
+  const handleCheckTask = (t: Task) => {
+    const check = canCompleteTask(t.id);
+    if (!check.allowed) {
+      Alert.alert(
+        "Task Blocked",
+        `You cannot complete this task until its prerequisite tasks are finished:\n\n• ${check.blockingTasks.map((b) => b.title).join("\n• ")}`
+      );
+      return;
+    }
+    updateTask(t.id, { status: "done" });
+  };
 
   const groups = useMemo(() => {
     const today = dayKey();
@@ -111,7 +125,7 @@ export default function TasksScreen() {
         <View style={[styles.energyBar, { backgroundColor: ENERGY_COLOR[t.energy] }]} />
         <Pressable
           style={({ pressed }) => [styles.circle, pressed && { opacity: 0.5 }]}
-          onPress={() => updateTask(t.id, { status: "done" })}
+          onPress={() => handleCheckTask(t)}
           hitSlop={8}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: false }}
@@ -145,6 +159,32 @@ export default function TasksScreen() {
             <Text style={styles.filterText}>Showing: {taskFilter}</Text>
             <Ionicons name="close-circle" size={16} color={TAB_IDLE} />
           </Pressable>
+        )}
+
+        {/* Section / Category Filter Chips */}
+        {sections.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sectionChipsScroll}>
+            <Pressable
+              style={[styles.sectionChip, selectedSectionId === null && styles.sectionChipActive]}
+              onPress={() => setSelectedSectionId(null)}
+            >
+              <Text style={[styles.sectionChipText, selectedSectionId === null && styles.sectionChipTextActive]}>
+                All
+              </Text>
+            </Pressable>
+            {sections.map((sec) => (
+              <Pressable
+                key={sec.id}
+                style={[styles.sectionChip, selectedSectionId === sec.id && styles.sectionChipActive]}
+                onPress={() => setSelectedSectionId(selectedSectionId === sec.id ? null : sec.id)}
+              >
+                <View style={[styles.sectionChipDot, { backgroundColor: sec.color }]} />
+                <Text style={[styles.sectionChipText, selectedSectionId === sec.id && styles.sectionChipTextActive]}>
+                  {sec.name}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         )}
 
         {groups.overdue.length > 0 && (
@@ -274,6 +314,26 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: 8,
   },
+  sectionChipsScroll: { marginBottom: 12 },
+  sectionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#202020",
+    borderWidth: 1,
+    borderColor: LINE,
+    marginRight: 8,
+  },
+  sectionChipActive: {
+    borderColor: ACCENT,
+    backgroundColor: "rgba(250,110,30,0.15)",
+  },
+  sectionChipDot: { width: 8, height: 8, borderRadius: 4 },
+  sectionChipText: { color: TAB_IDLE, fontSize: 13, fontWeight: "600" },
+  sectionChipTextActive: { color: ACCENT, fontWeight: "700" },
   filterText: { color: ACCENT, fontSize: 13, fontWeight: "600" },
   card: { backgroundColor: "#1A1A1A", borderRadius: 16, borderWidth: 1, borderColor: LINE, padding: 16, marginBottom: 12 },
   input: { backgroundColor: "#1E1E1E", borderWidth: 1.5, borderColor: LINE, borderRadius: 12, color: "#FFFFFF", fontSize: 15, padding: 14, marginBottom: 12 },

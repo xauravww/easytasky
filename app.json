@@ -38,7 +38,8 @@
           "microphonePermission": "Allow EasyTasky to use the microphone for voice commands.",
           "speechRecognitionPermission": "Allow EasyTasky to recognize your speech."
         }
-      ]
+      ],
+      "expo-sharing"
     ]
   }
 }

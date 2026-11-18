@@ -11,6 +11,13 @@ import AgentScreen from "./src/screens/AgentScreen";
 import FocusScreen from "./src/screens/FocusScreen";
 import ExtrasScreen from "./src/screens/ExtrasScreen";
 import HabitsScreen from "./src/screens/HabitsScreen";
+import SlidingDrawer, { type DrawerOptionKey } from "./src/components/SlidingDrawer";
+import SectionsManagerModal from "./src/components/SectionsManagerModal";
+import BackupRestoreModal from "./src/components/BackupRestoreModal";
+import SettingsModal from "./src/components/SettingsModal";
+import NextDayPlanTool from "./src/components/NextDayPlanTool";
+import ShutdownRitualTool from "./src/components/ShutdownRitualTool";
+import ArchivedTasksTool from "./src/components/ArchivedTasksTool";
 
 
 type TabKey = "tasks" | "chat" | "focus" | "habits" | "extras";
@@ -32,6 +39,9 @@ export default function App() {
   const [tab, setTab] = useState<TabKey>("tasks");
   const [focusImmersive, setFocusImmersive] = useState(false);
   const [fade] = useState(() => new Animated.Value(1));
+
+  // Drawer options modal state
+  const [activeModal, setActiveModal] = useState<DrawerOptionKey | null>(null);
 
   useEffect(() => {
     init();
@@ -112,6 +122,64 @@ export default function App() {
                 </Pressable>
               ))}
             </View>
+
+            {/* Draggable Sliding Drawer Handle (Item 1) */}
+            <SlidingDrawer onSelectOption={(opt) => setActiveModal(opt)} />
+
+            {/* Drawer Sub-Modals */}
+            <SectionsManagerModal
+              visible={activeModal === "sections"}
+              onClose={() => setActiveModal(null)}
+            />
+            <BackupRestoreModal
+              visible={activeModal === "backup"}
+              onClose={() => setActiveModal(null)}
+            />
+            {activeModal === "settings" && (
+              <SettingsModal
+                onClose={() => setActiveModal(null)}
+                onSaved={() => setActiveModal(null)}
+              />
+            )}
+            {activeModal === "archived" && (
+              <View style={StyleSheet.absoluteFill}>
+                <SafeAreaView style={{ flex: 1, backgroundColor: "#141414" }}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalHeaderTitle}>Archived Tasks</Text>
+                    <Pressable onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+                      <Ionicons name="close" size={20} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
+                  <ArchivedTasksTool />
+                </SafeAreaView>
+              </View>
+            )}
+            {activeModal === "nextday" && (
+              <View style={StyleSheet.absoluteFill}>
+                <SafeAreaView style={{ flex: 1, backgroundColor: "#141414" }}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalHeaderTitle}>Next-Day Notebook</Text>
+                    <Pressable onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+                      <Ionicons name="close" size={20} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
+                  <NextDayPlanTool />
+                </SafeAreaView>
+              </View>
+            )}
+            {activeModal === "shutdown" && (
+              <View style={StyleSheet.absoluteFill}>
+                <SafeAreaView style={{ flex: 1, backgroundColor: "#141414" }}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalHeaderTitle}>Shutdown Ritual</Text>
+                    <Pressable onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+                      <Ionicons name="close" size={20} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
+                  <ShutdownRitualTool />
+                </SafeAreaView>
+              </View>
+            )}
           </SafeAreaView>
         )}
       </View>
@@ -132,4 +200,22 @@ const styles = StyleSheet.create({
   },
   tab: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 48, gap: 2 },
   tabLabel: { fontSize: 10, color: SUB },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#282828",
+  },
+  modalHeaderTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "700" },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#1E1E1E",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

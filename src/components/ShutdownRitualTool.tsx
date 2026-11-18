@@ -1,5 +1,12 @@
-import React, { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useStore } from "../store/useStore";
 import { aiJson } from "../lib/aiClient";
@@ -13,117 +20,257 @@ const SUB = "#9C9C9C";
 const ACCENT = "#FA6E1E";
 const RED = "#E5484D";
 
-type Step = { id: string; label: string };
-
-const STEPS: Step[] = [
-  { id: "inbox", label: "Clear your inbox: file, do, or mark unwanted" },
-  { id: "catch", label: "Capture any loose thoughts/tasks for tomorrow" },
-  { id: "peak", label: "Note your most important task for tomorrow" },
-  { id: "close", label: "Close your loops: reply, delegate, or defer" },
-  { id: "stop", label: "Pick a hard stop time and stop" },
+const DEFAULT_RITUALS = [
+  "Clear your inbox: file, do, or archive tasks",
+  "Review & jot down notes in Next-Day Planner",
+  "Close lingering browser tabs & save work",
+  "Pick a hard stop time and log off completely",
 ];
 
 export default function ShutdownRitualTool() {
-  const [done, setDone] = useState<Record<string, boolean>>({});
-  const [recap, setRecap] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
-  const [err, setErr] = useState("");
+  const rituals = useStore((s) => s.shutdownRituals);
+  const shutdownChecks = useStore((s) => s.shutdownChecks);
+  const addShutdownRitual = useStore((s) => s.addShutdownRitual);
+  const deleteShutdownRitual = useStore((s) => s.deleteShutdownRitual);
+  const toggleShutdownCheck = useStore((s) => s.toggleShutdownCheck);
   const tasks = useStore((s) => s.tasks);
   const profile = useStore((s) => s.profile);
-  const completed = STEPS.filter((s) => done[s.id]).length;
 
-  const aiRecap = async () => {
+  const today = dayKey();
+
+  // If DB has no rituals, seed default rituals
+  React.useEffect(() => {
+    if (rituals.length === 0) {
+      DEFAULT_RITUALS.forEach((title) => addShutdownRitual(title));
+    }
+  }, [rituals.length, addShutdownRitual]);
+
+  const [inputTitle, setInputTitle] = useState("");
+  const [working, setWorking] = useState(false);
+  const [err, setErr] = useState("");
+  const [recap, setRecap] = useState<string | null>(null);
+
+  const checkedRitualIds = useMemo(() => {
+    return new Set(shutdownChecks.filter((c) => c.day === today).map((c) => c.ritual_id));
+  }, [shutdownChecks, today]);
+
+  const completedCount = rituals.filter((r) => checkedRitualIds.has(r.id)).length;
+
+  const handleAdd = async () => {
+    const clean = inputTitle.trim();
+    if (!clean) return;
+    await addShutdownRitual(clean);
+    setInputTitle("");
+  };
+
+  const aiSuggestRituals = async () => {
     setWorking(true);
     setErr("");
     try {
-      const todayKey = dayKey();
-      const doneToday = tasks.filter((t) => t.status === "done" && t.created_at >= new Date(todayKey + "T00:00:00").getTime());
-      const openNow = tasks.filter((t) => t.status !== "done" && t.status !== "habit");
+      const doneToday = tasks.filter((t) => t.status === "done" && t.created_at >= new Date(today + "T00:00:00").getTime());
       const j = await aiJson(
-        "You are a gentle end-of-day coach. Write a 2-3 sentence recap of what got done, and name the single most important thing to do tomorrow.",
-        `About the user: ${profile || "(none)"}\n\nCompleted today:\n${doneToday.slice(0, 15).map((t) => `- ${t.title}`).join("\n") || "(nothing recorded)"}\n\nStill open:\n${openNow.slice(0, 15).map((t) => `- ${t.title}`).join("\n") || "(none)"}\n\nReturn JSON: {"recap": string, "important_task": string}`
+        "You analyze the user's workflow and recommend 2-3 personalized end-of-day shutdown habits.",
+        `User profile: ${profile || "(none)"}\nTasks completed today: ${doneToday.length}\n\nReturn JSON: {"recommendations": string[], "summary": string}`
       );
-      const recapText = typeof j.recap === "string" ? j.recap : "";
-      const important = typeof j.important_task === "string" ? j.important_task : "";
-      setRecap([recapText, important ? `Tomorrow's priority: ${important}` : ""].filter(Boolean).join("\n\n"));
+      const recs = Array.isArray(j.recommendations) ? j.recommendations.filter((x): x is string => typeof x === "string") : [];
+      for (const r of recs) {
+        if (!rituals.some((x) => x.title.toLowerCase() === r.toLowerCase())) {
+          await addShutdownRitual(r);
+        }
+      }
+      if (typeof j.summary === "string" && j.summary) {
+        setRecap(j.summary);
+      }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "AI recap failed. Configure AI in Agent settings.");
+      setErr(e instanceof Error ? e.message : "AI suggestions failed.");
     } finally {
       setWorking(false);
     }
   };
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Text style={styles.hint}>
-        End-of-day ritual. Check each one off to close your day cleanly.
-      </Text>
+    <View style={styles.root}>
+      <FlatList
+        data={rituals}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.content}
+        ListHeaderComponent={
+          <View>
+            <Text style={styles.heading}>Shutdown Ritual</Text>
+            <Text style={styles.hint}>
+              Daily end-of-work ritual. You can manually configure or customize your rituals anytime. Checkmarks reset every day.
+            </Text>
 
-      <Pressable style={styles.aiBtn} onPress={aiRecap} disabled={working} accessibilityRole="button">
-        <Ionicons name="sparkles" size={16} color={ACCENT} />
-        <Text style={styles.aiBtnText}>{working ? "AI thinking…" : "Generate recap with AI"}</Text>
-      </Pressable>
-      {err ? <Text style={styles.err}>{err}</Text> : null}
-      {recap ? (
-        <View style={styles.recapBox}>
-          <Text style={styles.recapText}>{recap}</Text>
-        </View>
-      ) : null}
+            {/* AI Suggest / Recap */}
+            <Pressable style={styles.aiBtn} onPress={aiSuggestRituals} disabled={working}>
+              <Ionicons name="sparkles" size={16} color={ACCENT} />
+              <Text style={styles.aiBtnText}>{working ? "AI analyzing behavior…" : "AI Suggest Rituals & Recap"}</Text>
+            </Pressable>
+            {err ? <Text style={styles.err}>{err}</Text> : null}
+            {recap ? (
+              <View style={styles.recapBox}>
+                <Text style={styles.recapText}>{recap}</Text>
+              </View>
+            ) : null}
 
-      <View style={styles.progress}>
-        <Text style={styles.progressText}>{completed}/{STEPS.length} done</Text>
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${(completed / STEPS.length) * 100}%` }]} />
-        </View>
-      </View>
-
-      {STEPS.map((step) => {
-        const on = !!done[step.id];
-        return (
-          <Pressable
-            key={step.id}
-            style={({ pressed }) => [styles.step, on && styles.stepDone, pressed && { opacity: 0.7 }]}
-            onPress={() => setDone((d) => ({ ...d, [step.id]: !d[step.id] }))}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: on }}
-          >
-            <View style={[styles.check, on && styles.checkOn]}>
-              {on && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+            {/* Progress Bar */}
+            <View style={styles.progress}>
+              <Text style={styles.progressText}>
+                {completedCount}/{rituals.length} completed today
+              </Text>
+              <View style={styles.progressBar}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${rituals.length ? (completedCount / rituals.length) * 100 : 0}%` },
+                  ]}
+                />
+              </View>
             </View>
-            <Text style={[styles.stepLabel, on && styles.stepLabelDone]}>{step.label}</Text>
-          </Pressable>
-        );
-      })}
 
-      {completed === STEPS.length && (
-        <View style={styles.done}>
-          <Ionicons name="moon" size={20} color={ACCENT} />
-          <Text style={styles.doneText}>Day closed. Nice work.</Text>
-        </View>
-      )}
-    </ScrollView>
+            {/* Add ritual row */}
+            <View style={styles.addRow}>
+              <TextInput
+                style={styles.input}
+                value={inputTitle}
+                onChangeText={setInputTitle}
+                placeholder="Add custom shutdown ritual..."
+                placeholderTextColor="#666666"
+                onSubmitEditing={handleAdd}
+                returnKeyType="done"
+              />
+              <Pressable style={styles.addBtn} onPress={handleAdd}>
+                <Ionicons name="add" size={20} color="#FFFFFF" />
+              </Pressable>
+            </View>
+          </View>
+        }
+        renderItem={({ item: ritual }) => {
+          const isDone = checkedRitualIds.has(ritual.id);
+          return (
+            <View style={[styles.step, isDone && styles.stepDone]}>
+              <Pressable
+                style={styles.checkWrapper}
+                onPress={() => toggleShutdownCheck(ritual.id, today)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isDone }}
+              >
+                <View style={[styles.check, isDone && styles.checkOn]}>
+                  {isDone && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+                </View>
+                <Text style={[styles.stepLabel, isDone && styles.stepLabelDone]}>
+                  {ritual.title}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.deleteBtn}
+                onPress={() => deleteShutdownRitual(ritual.id)}
+                accessibilityRole="button"
+                accessibilityLabel="Delete ritual"
+              >
+                <Ionicons name="trash-outline" size={16} color={RED} />
+              </Pressable>
+            </View>
+          );
+        }}
+        ListFooterComponent={
+          completedCount === rituals.length && rituals.length > 0 ? (
+            <View style={styles.doneBanner}>
+              <Ionicons name="moon" size={22} color={ACCENT} />
+              <Text style={styles.doneBannerText}>All shutdown rituals complete. Have a peaceful evening!</Text>
+            </View>
+          ) : undefined
+        }
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  content: { padding: 16, paddingBottom: 40 },
-  hint: { color: SUB, fontSize: 13, lineHeight: 19, marginBottom: 16 },
-  aiBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1.5, borderColor: ACCENT, borderRadius: 14, minHeight: 48, marginBottom: 12 },
-  aiBtnText: { color: ACCENT, fontSize: 15, fontWeight: "700" },
+  content: { padding: 16, paddingBottom: 50 },
+  heading: { color: TEXT, fontSize: 22, fontWeight: "700", marginBottom: 6 },
+  hint: { color: SUB, fontSize: 13, lineHeight: 18, marginBottom: 14 },
+  aiBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: ACCENT,
+    borderRadius: 14,
+    minHeight: 46,
+    marginBottom: 12,
+  },
+  aiBtnText: { color: ACCENT, fontSize: 14, fontWeight: "700" },
   err: { color: RED, fontSize: 13, marginBottom: 10 },
-  recapBox: { backgroundColor: CARD, borderRadius: 14, borderWidth: 1, borderColor: LINE, padding: 16, marginBottom: 16 },
-  recapText: { color: TEXT, fontSize: 14, lineHeight: 21 },
-  progress: { backgroundColor: CARD, borderRadius: 14, borderWidth: 1, borderColor: LINE, padding: 16, marginBottom: 16 },
-  progressText: { color: TEXT, fontSize: 14, fontWeight: "700", marginBottom: 10 },
-  progressBar: { height: 8, borderRadius: 4, backgroundColor: "#2A2A2A", overflow: "hidden" },
-  progressFill: { height: 8, backgroundColor: ACCENT, borderRadius: 4 },
-  step: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: CARD, borderRadius: 14, borderWidth: 1, borderColor: LINE, padding: 16, marginBottom: 10 },
-  stepDone: { borderColor: ACCENT },
-  check: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: "#3A3A3A", alignItems: "center", justifyContent: "center" },
+  recapBox: {
+    backgroundColor: CARD,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: LINE,
+    padding: 12,
+    marginBottom: 14,
+  },
+  recapText: { color: TEXT, fontSize: 13, lineHeight: 19 },
+  progress: { marginBottom: 16 },
+  progressText: { color: SUB, fontSize: 13, fontWeight: "600", marginBottom: 6 },
+  progressBar: { height: 6, backgroundColor: CARD, borderRadius: 3, overflow: "hidden" },
+  progressFill: { height: "100%", backgroundColor: ACCENT },
+  addRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
+  input: {
+    flex: 1,
+    backgroundColor: "#1E1E1E",
+    borderWidth: 1.5,
+    borderColor: LINE,
+    borderRadius: 12,
+    color: TEXT,
+    fontSize: 14,
+    paddingHorizontal: 14,
+  },
+  addBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: ACCENT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  step: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: CARD,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: LINE,
+    padding: 14,
+    marginBottom: 10,
+  },
+  stepDone: { backgroundColor: "#171717", borderColor: "#202020" },
+  checkWrapper: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
+  check: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#3A3A3A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   checkOn: { backgroundColor: ACCENT, borderColor: ACCENT },
-  stepLabel: { flex: 1, color: TEXT, fontSize: 15 },
-  stepLabelDone: { color: SUB, textDecorationLine: "line-through" },
-  done: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12 },
-  doneText: { color: TEXT, fontSize: 14 },
+  stepLabel: { flex: 1, color: TEXT, fontSize: 14, lineHeight: 20 },
+  stepLabelDone: { color: "#666666", textDecorationLine: "line-through" },
+  deleteBtn: { padding: 6 },
+  doneBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(250,110,30,0.12)",
+    borderWidth: 1,
+    borderColor: ACCENT,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 10,
+  },
+  doneBannerText: { flex: 1, color: TEXT, fontSize: 13, fontWeight: "600" },
 });

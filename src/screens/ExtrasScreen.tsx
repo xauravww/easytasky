@@ -7,7 +7,7 @@ import EisenhowerMatrixTool from "../components/EisenhowerMatrixTool";
 import CEO333Tool from "../components/CEO333Tool";
 import ShutdownRitualTool from "../components/ShutdownRitualTool";
 import NextDayPlanTool from "../components/NextDayPlanTool";
-import UnwantedInboxTool from "../components/UnwantedInboxTool";
+import ArchivedTasksTool from "../components/ArchivedTasksTool";
 
 const BG = "#141414";
 const CARD = "#1A1A1A";
@@ -72,10 +72,10 @@ export default function ExtrasScreen() {
     },
     {
       id: "unwanted",
-      icon: "ban-outline",
-      title: "Unwanted",
-      desc: "Triage discarded tasks",
-      render: () => <UnwantedInboxTool />,
+      icon: "archive-outline",
+      title: "Archived Tasks",
+      desc: "Search, filter, restore, or delete",
+      render: () => <ArchivedTasksTool />,
     },
   ];
 

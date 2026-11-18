@@ -88,7 +88,6 @@ export default function AgentScreen() {
   const [settings, setSettings] = useState(false);
   const [aiReady, setAiReady] = useState(aiEnabled());
   const [pending, setPending] = useState<{ proposals: BlockProposal[] } | null>(null);
-  const [talkOn, setTalkOn] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [speechUrl, setSpeechUrl] = useState<string | null>(null);
   const player = useAudioPlayer(speechUrl ? { uri: speechUrl } : undefined);
@@ -103,7 +102,6 @@ export default function AgentScreen() {
   }, [speechUrl, player]);
 
   const maybeSpeak = async (content: string) => {
-    if (!talkOn) return;
     try {
       const url = await synthesizeSpeech(content);
       setSpeechUrl(url);
@@ -158,6 +156,15 @@ export default function AgentScreen() {
           const b = state.blocks.find((x) => x.id === p.id);
           await state.deleteBlock(p.id);
           applied.push(`removed "${b?.label ?? "#" + p.id}"`);
+        } else if (p.kind === "createSection") {
+          await state.addSection(p.name, p.color);
+          applied.push(`created section "${p.name}"`);
+        } else if (p.kind === "deleteSection") {
+          const sec = state.sections.find((s) => s.name.toLowerCase() === p.name.toLowerCase());
+          if (sec) {
+            await state.deleteSection(sec.id);
+            applied.push(`deleted section "${p.name}"`);
+          }
         }
       }
       const today = dayKey();
@@ -288,15 +295,6 @@ export default function AgentScreen() {
           <Text style={styles.headerSub}>{aiReady ? getAiConfig().model : "not configured"}</Text>
         </View>
         <Pressable
-          style={[styles.clearBtn, talkOn && styles.talkBtnOn]}
-          onPress={() => setTalkOn((v) => !v)}
-          accessibilityRole="button"
-          accessibilityLabel="Toggle talk mode"
-          accessibilityState={{ selected: talkOn }}
-        >
-          <Ionicons name="mic" size={18} color={talkOn ? "#FFFFFF" : SUB} />
-        </Pressable>
-        <Pressable
           style={styles.clearBtn}
           onPress={() => setSettings(true)}
           accessibilityRole="button"
@@ -342,10 +340,12 @@ export default function AgentScreen() {
                     <Ionicons name="copy-outline" size={14} color={SUB} />
                     <Text style={styles.msgActionText}>Copy</Text>
                   </Pressable>
-                  <Pressable style={styles.msgAction} onPress={() => retry(i)} disabled={busy} accessibilityRole="button" accessibilityLabel="Retry">
-                    <Ionicons name="refresh" size={14} color={SUB} />
-                    <Text style={styles.msgActionText}>Retry</Text>
-                  </Pressable>
+                  {i !== 0 && (
+                    <Pressable style={styles.msgAction} onPress={() => retry(i)} disabled={busy} accessibilityRole="button" accessibilityLabel="Retry">
+                      <Ionicons name="refresh" size={14} color={SUB} />
+                      <Text style={styles.msgActionText}>Retry</Text>
+                    </Pressable>
+                  )}
                 </View>
               </>
             )}
@@ -406,7 +406,7 @@ export default function AgentScreen() {
           accessibilityRole="button"
           accessibilityLabel="Start voice call"
         >
-          <Ionicons name="mic" size={20} color={ACCENT} />
+          <Ionicons name="call" size={20} color={ACCENT} />
         </Pressable>
         <Pressable style={[styles.sendBtn, busy && { opacity: 0.5 }]} onPress={send} disabled={busy} accessibilityRole="button" accessibilityLabel="Send">
           <Ionicons name="arrow-up" size={22} color="#FFFFFF" />

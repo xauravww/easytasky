@@ -21,6 +21,41 @@ export type Task = {
   habit_freq: string | null;
   habit_days: string | null;
   habit_color: string | null;
+  section_id?: string | null;
+};
+
+export type Section = {
+  id: string;
+  name: string;
+  color: string;
+  sort: number;
+  created_at: number;
+};
+
+export type TaskDependency = {
+  id: string;
+  task_id: string;
+  depends_on_task_id: string;
+};
+
+export type DailyNote = {
+  id: string;
+  day: string; // YYYY-MM-DD
+  content: string;
+  updated_at: number;
+};
+
+export type ShutdownRitual = {
+  id: string;
+  title: string;
+  sort: number;
+  enabled: number;
+};
+
+export type ShutdownCheck = {
+  id: number;
+  ritual_id: string;
+  day: string; // YYYY-MM-DD
 };
 
 export type ActivityLog = {
@@ -75,6 +110,11 @@ export type DBData = {
   pomos: PomoSession[];
   habitChecks: HabitCheck[];
   subtasks: Subtask[];
+  sections: Section[];
+  dependencies: TaskDependency[];
+  dailyNotes: DailyNote[];
+  shutdownRituals: ShutdownRitual[];
+  shutdownChecks: ShutdownCheck[];
 };
 
 let db: SQLiteDatabase | null = null;
@@ -179,8 +219,16 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
   try {
     await db.execAsync("ALTER TABLE pomodoro_sessions ADD COLUMN break_sec INTEGER DEFAULT 0");
   } catch {}
+  try {
+    await db.execAsync("ALTER TABLE tasks ADD COLUMN section_id TEXT");
+  } catch {}
   await db.execAsync("CREATE TABLE IF NOT EXISTS habit_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, habit_id TEXT NOT NULL, day TEXT NOT NULL, UNIQUE(habit_id, day))");
   await db.execAsync("CREATE TABLE IF NOT EXISTS subtasks (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, title TEXT NOT NULL, done INTEGER DEFAULT 0, sort INTEGER DEFAULT 0, created_at INTEGER NOT NULL)");
+  await db.execAsync("CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT DEFAULT '#0B6E46', sort INTEGER DEFAULT 0, created_at INTEGER NOT NULL)");
+  await db.execAsync("CREATE TABLE IF NOT EXISTS task_dependencies (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, depends_on_task_id TEXT NOT NULL, UNIQUE(task_id, depends_on_task_id))");
+  await db.execAsync("CREATE TABLE IF NOT EXISTS daily_notes (id TEXT PRIMARY KEY, day TEXT NOT NULL UNIQUE, content TEXT NOT NULL, updated_at INTEGER NOT NULL)");
+  await db.execAsync("CREATE TABLE IF NOT EXISTS shutdown_rituals (id TEXT PRIMARY KEY, title TEXT NOT NULL, sort INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1)");
+  await db.execAsync("CREATE TABLE IF NOT EXISTS shutdown_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, ritual_id TEXT NOT NULL, day TEXT NOT NULL, UNIQUE(ritual_id, day))");
   await seedIfNeeded(db);
   return db;
 };
@@ -297,13 +345,42 @@ const seedIfNeeded = async (d: SQLiteDatabase): Promise<void> => {
 };
 
 export const loadAll = async (d: SQLiteDatabase): Promise<DBData> => {
-  const [tasks, logs, blocks, pomos, habitChecks, subtasks] = await Promise.all([
+  const [
+    tasks,
+    logs,
+    blocks,
+    pomos,
+    habitChecks,
+    subtasks,
+    sections,
+    dependencies,
+    dailyNotes,
+    shutdownRituals,
+    shutdownChecks,
+  ] = await Promise.all([
     d.getAllAsync<Task>("SELECT * FROM tasks ORDER BY created_at DESC"),
     d.getAllAsync<ActivityLog>("SELECT * FROM activity_log ORDER BY at"),
     d.getAllAsync<TimeBlock>("SELECT * FROM time_blocks ORDER BY day, start_min"),
     d.getAllAsync<PomoSession>("SELECT * FROM pomodoro_sessions ORDER BY started_at"),
     d.getAllAsync<HabitCheck>("SELECT * FROM habit_checks ORDER BY day"),
     d.getAllAsync<Subtask>("SELECT * FROM subtasks ORDER BY sort, created_at"),
+    d.getAllAsync<Section>("SELECT * FROM sections ORDER BY sort, created_at"),
+    d.getAllAsync<TaskDependency>("SELECT * FROM task_dependencies"),
+    d.getAllAsync<DailyNote>("SELECT * FROM daily_notes ORDER BY day DESC"),
+    d.getAllAsync<ShutdownRitual>("SELECT * FROM shutdown_rituals ORDER BY sort ASC"),
+    d.getAllAsync<ShutdownCheck>("SELECT * FROM shutdown_checks ORDER BY day"),
   ]);
-  return { tasks, logs, blocks, pomos, habitChecks, subtasks };
+  return {
+    tasks,
+    logs,
+    blocks,
+    pomos,
+    habitChecks,
+    subtasks,
+    sections,
+    dependencies,
+    dailyNotes,
+    shutdownRituals,
+    shutdownChecks,
+  };
 };

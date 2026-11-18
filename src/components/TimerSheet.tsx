@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useStore } from "../store/useStore";
 import FocusPicker from "./FocusPicker";
@@ -20,6 +21,7 @@ type Props = {
 };
 
 export default function TimerSheet({ visible, onClose }: Props) {
+  const insets = useSafeAreaInsets();
   const pomo = useStore((s) => s.pomo);
   const tasks = useStore((s) => s.tasks);
   const setFocusMin = useStore((s) => s.setFocusMin);
@@ -42,7 +44,7 @@ export default function TimerSheet({ visible, onClose }: Props) {
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 36) }]}>
             {pomo.mode === "pomodoro" && (
               <>
                 <Text style={styles.sectionLabel}>Focus length</Text>

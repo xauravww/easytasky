@@ -6,7 +6,9 @@ import type { ToolCall } from "./aiClient";
 export type BlockProposal =
   | { kind: "addBlock"; block: Omit<TimeBlock, "id"> }
   | { kind: "updateBlock"; id: number; patch: Partial<Omit<TimeBlock, "id">> }
-  | { kind: "deleteBlock"; id: number };
+  | { kind: "deleteBlock"; id: number }
+  | { kind: "createSection"; name: string; color?: string }
+  | { kind: "deleteSection"; name: string };
 
 // ---- helpers ----
 const toMin = (t: unknown): number | null => {
@@ -58,6 +60,13 @@ export const proposalsFromToolCalls = (calls: ToolCall[], blocks: TimeBlock[]): 
       const target = findBlock(c.args.find);
       if (!target) continue;
       proposals.push({ kind: "deleteBlock", id: target.id });
+    } else if (c.name === "create_section") {
+      const name = typeof c.args.name === "string" ? c.args.name.trim() : "";
+      const color = typeof c.args.color === "string" ? c.args.color.trim() : "#0B6E46";
+      if (name) proposals.push({ kind: "createSection", name, color });
+    } else if (c.name === "delete_section") {
+      const name = typeof c.args.name === "string" ? c.args.name.trim() : "";
+      if (name) proposals.push({ kind: "deleteSection", name });
     }
   }
 
@@ -71,6 +80,8 @@ export const describeProposal = (p: BlockProposal): string => {
   const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
   if (p.kind === "addBlock") return `Add "${p.block.label}" ${fmt24(p.block.start_min)}-${fmt24(p.block.end_min)} (${p.block.type})`;
   if (p.kind === "updateBlock") return `Edit block #${p.id}: ${Object.keys(p.patch).join(", ")}`;
+  if (p.kind === "createSection") return `Create section "${p.name}"`;
+  if (p.kind === "deleteSection") return `Delete section "${p.name}"`;
   return `Delete block #${p.id}`;
 };
 
