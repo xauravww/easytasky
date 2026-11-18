@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { startVoice, stopVoice, synthesizeSpeech, prewarmTalkSession } from "../lib/talk";
 import { prewarmAiSession } from "../lib/aiClient";
+import type { AgentSession } from "../lib/agentHistory";
+import AgentHistoryPanel from "./AgentHistoryPanel";
 import { createAudioPlayer } from "expo-audio";
 
 const BG = "#000000";
@@ -12,22 +14,61 @@ const SUB = "#9C9C9C";
 const ACCENT_ORB = "#FA6E1E";
 const RED = "#E5484D";
 
+export type CallPhase = "listening" | "thinking" | "speaking" | "error";
+
+export type CallModeModalHandle = {
+  interrupt: () => void;
+};
+
 type Props = {
   onSend: (text: string) => Promise<string>;
   onClose: () => void;
   onMinimize?: () => void;
+  minimized?: boolean;
+  history?: AgentSession[];
+  onRecordTurn?: (role: "user" | "assistant", content: string) => void;
+  onRefreshHistory?: () => Promise<void> | void;
+  onDeleteHistory?: (id: string) => Promise<void> | void;
+  onPhaseChange?: (phase: CallPhase) => void;
+  elapsedSeconds?: number;
 };
 
-export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
+const PHASE_LABELS: Record<CallPhase, string> = {
+  listening: "Listening",
+  thinking: "Thinking",
+  speaking: "Speaking",
+  error: "Connection issue",
+};
+
+const formatDuration = (seconds: number): string => {
+  const min = Math.floor(seconds / 60);
+  const sec = `${seconds % 60}`.padStart(2, "0");
+  return `${min}:${sec}`;
+};
+
+const CallModeModal = React.forwardRef<CallModeModalHandle, Props>(function CallModeModal({
+  onSend,
+  onClose,
+  onMinimize,
+  minimized = false,
+  history = [],
+  onRecordTurn,
+  onRefreshHistory,
+  onDeleteHistory,
+  onPhaseChange,
+  elapsedSeconds = 0,
+}, ref) {
   const insets = useSafeAreaInsets();
   const [orb] = useState(() => new Animated.Value(0));
-  const [status, setStatus] = useState("Listening…");
+  const [phase, setPhase] = useState<CallPhase>("listening");
   const [error, setError] = useState("");
   const [transcript, setTranscript] = useState("");
   const [live, setLive] = useState("");
-  const [diag, setDiag] = useState("");
+  const [, setDiag] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
   const transcriptScrollRef = useRef<any>(null);
   const onSendRef = useRef(onSend);
+  const onRecordTurnRef = useRef(onRecordTurn);
   const cancelledRef = useRef(false);
   const interruptRef = useRef<(() => void) | null>(null);
   const playerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
@@ -35,6 +76,14 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
   useEffect(() => {
     onSendRef.current = onSend;
   }, [onSend]);
+
+  useEffect(() => {
+    onRecordTurnRef.current = onRecordTurn;
+  }, [onRecordTurn]);
+
+  useEffect(() => {
+    onPhaseChange?.(phase);
+  }, [onPhaseChange, phase]);
 
   const interruptSpeaking = () => {
     if (interruptRef.current) {
@@ -46,8 +95,14 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
       playerRef.current?.release();
     } catch {}
     playerRef.current = null;
-    setStatus("Listening…");
+    setPhase("listening");
   };
+
+  useImperativeHandle(ref, () => ({
+    interrupt: () => {
+      if (phase === "speaking") interruptSpeaking();
+    },
+  }));
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -75,6 +130,7 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
       interruptSpeaking();
       queue.push(text);
       wakeLoop();
+      onRecordTurnRef.current?.("user", text);
     };
 
     const playAudioUrl = (url: string) =>
@@ -106,7 +162,7 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
       });
 
     const speak = async (reply: string) => {
-      setStatus("Speaking…");
+      setPhase("speaking");
       try {
         const audioUrl = await synthesizeSpeech(reply);
         if (cancelledRef.current) return;
@@ -122,7 +178,7 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
         playerRef.current = null;
         interruptRef.current = null;
         if (!cancelledRef.current) {
-          setStatus("Listening…");
+          setPhase("listening");
         }
       }
     };
@@ -156,7 +212,7 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
               }
             }, 600);
           } else if (!processing) {
-            setStatus("Error");
+            setPhase("error");
             setError(message);
           }
         },
@@ -169,7 +225,7 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
             }
           }, 1000);
         } else if (!processing) {
-          setStatus("Error");
+          setPhase("error");
           setError(e.message);
         }
       });
@@ -195,7 +251,7 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
         processing = true;
         // Keep listening ready after speaking
         if (cancelledRef.current) break;
-        setStatus("Thinking…");
+        setPhase("thinking");
         setError("");
         setTranscript((prev) => `${prev}\nYou: ${text.trim()}`);
         let reply = "";
@@ -206,6 +262,7 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
         }
         if (cancelledRef.current) break;
         setTranscript((prev) => `${prev}\nAgent: ${reply}`);
+        onRecordTurnRef.current?.("assistant", reply);
         await speak(reply);
         processing = false;
         if (!cancelledRef.current) {
@@ -224,187 +281,288 @@ export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
     };
   }, [orb]);
 
-  const scale = orb.interpolate({ inputRange: [0, 1], outputRange: [1, 1.22] });
-  const opacity = orb.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
+  const scale = orb.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.08] });
+  const opacity = orb.interpolate({ inputRange: [0, 1], outputRange: [0.18, 0.42] });
+
+  const phaseColor = phase === "error" ? RED : phase === "thinking" ? "#D6D6D6" : ACCENT_ORB;
 
   return (
-    <Modal visible animationType="fade" statusBarTranslucent transparent onRequestClose={onClose}>
-      <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <View style={styles.topHeader}>
-          {onMinimize ? (
-            <Pressable
-              style={styles.minimizeBtn}
-              onPress={onMinimize}
-              accessibilityRole="button"
-              accessibilityLabel="Minimize call"
-            >
-              <Ionicons name="chevron-down" size={24} color="#FFFFFF" />
-            </Pressable>
-          ) : (
-            <View style={{ width: 36 }} />
-          )}
-          <Text style={styles.title}>Agent call</Text>
-          <View style={{ width: 36 }} />
-        </View>
-
-        <Pressable
-          style={styles.orbArea}
-          onPress={() => {
-            if (status === "Speaking…") {
-              interruptSpeaking();
-            }
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={status === "Speaking…" ? "Tap to interrupt speaking" : "Microphone active"}
+    <Modal
+      visible={!minimized}
+      animationType="fade"
+      statusBarTranslucent
+      transparent
+      onRequestClose={() => (historyOpen ? setHistoryOpen(false) : onClose())}
+    >
+      {historyOpen ? (
+        <AgentHistoryPanel
+          sessions={history}
+          onClose={() => setHistoryOpen(false)}
+          onRefresh={onRefreshHistory}
+          onDelete={onDeleteHistory}
+        />
+      ) : (
+        <View
+          style={[
+            styles.root,
+            { paddingTop: insets.top + 8, paddingBottom: Math.max(insets.bottom, 12) },
+          ]}
         >
-          <Animated.View style={[styles.orbHalo, { transform: [{ scale }], opacity }]} />
-          <View style={styles.orbCore}>
-            {status === "Error" ? (
-              <Ionicons name="alert-circle" size={48} color={RED} />
-            ) : status === "Speaking…" ? (
-              <Ionicons name="volume-high" size={48} color={BG} />
+          <View style={styles.topHeader}>
+            {onMinimize ? (
+              <Pressable
+                style={({ pressed }) => [styles.headerButton, pressed && styles.controlPressed]}
+                onPress={onMinimize}
+                accessibilityRole="button"
+                accessibilityLabel="Minimize call"
+              >
+                <Ionicons name="remove" size={28} color={TEXT} />
+              </Pressable>
             ) : (
-              <Ionicons name="mic" size={48} color={BG} />
+              <View style={styles.headerButton} />
             )}
-          </View>
-        </Pressable>
 
-        <Text style={styles.status}>{status}</Text>
-        {status === "Speaking…" ? (
-          <Pressable style={styles.tapInterruptBtn} onPress={interruptSpeaking} accessibilityRole="button">
-            <Ionicons name="hand-right" size={16} color={ACCENT_ORB} style={{ marginRight: 6 }} />
-            <Text style={styles.tapInterruptText}>Tap anywhere to interrupt</Text>
-          </Pressable>
-        ) : null}
-        {error ? <Text style={styles.error} numberOfLines={2}>{error}</Text> : null}
+            <View style={styles.callIdentity} pointerEvents="none">
+              <Text style={styles.callerName}>Agent</Text>
+              <Text style={styles.callDuration}>{formatDuration(elapsedSeconds)}</Text>
+            </View>
 
-        {/* Scrollable, strictly contained text area */}
-        <View style={styles.centerContainer}>
-          {diag ? (
-            <Text style={styles.diag} numberOfLines={1} ellipsizeMode="tail">
-              {diag}
-            </Text>
-          ) : null}
-          <View style={styles.transcriptBox}>
-            {live ? (
-              <Text style={styles.liveLabel}>You (live):</Text>
-            ) : null}
-            <ScrollView
-              ref={transcriptScrollRef}
-              style={styles.transcriptScroll}
-              contentContainerStyle={styles.transcriptScrollContent}
-              onContentSizeChange={() => {
-                transcriptScrollRef.current?.scrollToEnd({ animated: true });
-              }}
-              showsVerticalScrollIndicator={false}
-            >
-              <Text style={styles.transcript}>
-                {live ? live : transcript || "The call is live. Say something."}
-              </Text>
-            </ScrollView>
-          </View>
-        </View>
-
-        {/* Fixed bottom disconnect button: permanently in-view */}
-        <View style={styles.bottomBar}>
-          {onMinimize ? (
             <Pressable
-              style={styles.bottomMinimizeBtn}
-              onPress={onMinimize}
+              style={({ pressed }) => [styles.headerButton, pressed && styles.controlPressed]}
+              onPress={() => setHistoryOpen(true)}
               accessibilityRole="button"
-              accessibilityLabel="Minimize call"
+              accessibilityLabel="Conversation history"
             >
-              <Ionicons name="contract" size={22} color="#FFFFFF" />
+              <Ionicons name="time-outline" size={22} color={TEXT} />
             </Pressable>
-          ) : null}
-          <Pressable style={styles.endCall} onPress={onClose} accessibilityRole="button" accessibilityLabel="End call">
-            <Ionicons name="call" size={26} color="#FFFFFF" style={{ transform: [{ rotate: "135deg" }] }} />
-          </Pressable>
+          </View>
+
+          <View style={styles.callBody}>
+            <View style={styles.callStage}>
+              <View style={styles.orbArea} accessibilityLabel={PHASE_LABELS[phase]}>
+                <Animated.View
+                  style={[
+                    styles.orbHaloOuter,
+                    { borderColor: phaseColor, transform: [{ scale }], opacity },
+                  ]}
+                />
+                <Animated.View
+                  style={[
+                    styles.orbHalo,
+                    { backgroundColor: phaseColor, transform: [{ scale }], opacity },
+                  ]}
+                />
+                <View style={[styles.orbCore, { backgroundColor: phaseColor, shadowColor: phaseColor }]}>
+                  {phase === "error" ? (
+                    <Ionicons name="alert-circle" size={46} color={BG} />
+                  ) : phase === "speaking" ? (
+                    <Ionicons name="volume-high" size={46} color={BG} />
+                  ) : phase === "thinking" ? (
+                    <Ionicons name="ellipsis-horizontal" size={46} color={BG} />
+                  ) : (
+                    <Ionicons name="mic" size={46} color={BG} />
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.phaseRow}>
+                <View style={[styles.phaseDot, { backgroundColor: phaseColor }]} />
+                <Text style={styles.phaseText}>{PHASE_LABELS[phase]}</Text>
+              </View>
+              {error ? (
+                <Text style={styles.error} numberOfLines={2}>
+                  {error}
+                </Text>
+              ) : null}
+            </View>
+
+            {live || transcript.trim() ? (
+              <View style={styles.transcriptBox}>
+                {live ? (
+                  <View style={styles.liveHeader}>
+                    <View style={styles.liveDot} />
+                    <Text style={styles.liveLabel}>You</Text>
+                  </View>
+                ) : null}
+                <ScrollView
+                  ref={transcriptScrollRef}
+                  style={styles.transcriptScroll}
+                  contentContainerStyle={styles.transcriptScrollContent}
+                  onContentSizeChange={() => {
+                    transcriptScrollRef.current?.scrollToEnd({ animated: true });
+                  }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  <Text style={styles.transcript}>{live || transcript.trim()}</Text>
+                </ScrollView>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.bottomControls}>
+            <View style={styles.controlGroup}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.callControl,
+                  phase === "speaking" && styles.interruptControlActive,
+                  phase !== "speaking" && styles.controlDisabled,
+                  pressed && phase === "speaking" && styles.controlPressed,
+                ]}
+                onPress={interruptSpeaking}
+                disabled={phase !== "speaking"}
+                accessibilityRole="button"
+                accessibilityLabel="Interrupt Agent"
+                accessibilityState={{ disabled: phase !== "speaking" }}
+              >
+                <Ionicons
+                  name="hand-right"
+                  size={25}
+                  color={phase === "speaking" ? ACCENT_ORB : "#666666"}
+                />
+              </Pressable>
+              <Text style={[styles.controlLabel, phase !== "speaking" && styles.controlLabelDisabled]}>
+                Interrupt
+              </Text>
+            </View>
+
+            <View style={styles.controlGroup}>
+              <Pressable
+                style={({ pressed }) => [styles.endCall, pressed && styles.endCallPressed]}
+                onPress={onClose}
+                accessibilityRole="button"
+                accessibilityLabel="End call"
+              >
+                <Ionicons
+                  name="call"
+                  size={28}
+                  color={TEXT}
+                  style={{ transform: [{ rotate: "135deg" }] }}
+                />
+              </Pressable>
+              <Text style={styles.controlLabel}>End</Text>
+            </View>
+          </View>
         </View>
-      </View>
+      )}
     </Modal>
   );
-}
+});
+
+export default CallModeModal;
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BG, alignItems: "center", justifyContent: "space-between", padding: 20 },
+  root: {
+    flex: 1,
+    backgroundColor: "#060606",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
   topHeader: {
     width: "100%",
+    minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  minimizeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#1C1C1C",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: { color: SUB, fontSize: 16, fontWeight: "700", letterSpacing: 0.5 },
-  orbArea: { alignItems: "center", justifyContent: "center", width: 190, height: 190 },
-  orbHalo: { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: "rgba(250,110,30,0.25)" },
-  orbCore: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    backgroundColor: ACCENT_ORB,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: ACCENT_ORB,
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  status: { color: TEXT, fontSize: 20, fontWeight: "700" },
-  tapInterruptBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(250,110,30,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(250,110,30,0.4)",
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    marginTop: 6,
-  },
-  tapInterruptText: { color: ACCENT_ORB, fontSize: 13, fontWeight: "600" },
-  error: { color: RED, fontSize: 13, textAlign: "center", marginTop: 4, paddingHorizontal: 16 },
-  centerContainer: {
-    width: "100%",
-    flex: 1,
-    maxHeight: 220,
-    marginVertical: 12,
-    justifyContent: "flex-end",
-  },
-  diag: { color: SUB, fontSize: 11, textAlign: "center", marginBottom: 6, paddingHorizontal: 10 },
-  transcriptBox: { flex: 1, backgroundColor: "#111111", borderRadius: 16, padding: 14, overflow: "hidden" },
-  transcriptScroll: { flex: 1 },
-  transcriptScrollContent: { flexGrow: 1, justifyContent: "flex-end" },
-  liveLabel: { color: ACCENT_ORB, fontSize: 12, fontWeight: "700", marginBottom: 4 },
-  transcript: { color: TEXT, fontSize: 14, lineHeight: 21 },
-  bottomBar: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 8,
-    paddingBottom: 4,
-    position: "relative",
-  },
-  bottomMinimizeBtn: {
-    position: "absolute",
-    left: 20,
+  headerButton: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#1C1C1C",
+    backgroundColor: "#151515",
+    borderWidth: 1,
+    borderColor: "#282828",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#333333",
   },
+  callIdentity: { minWidth: 120, alignItems: "center", justifyContent: "center" },
+  callerName: { color: TEXT, fontSize: 17, lineHeight: 21, fontWeight: "700" },
+  callDuration: {
+    color: SUB,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 1,
+    fontVariant: ["tabular-nums"],
+  },
+  callBody: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+  },
+  callStage: { flex: 1, alignItems: "center", justifyContent: "center" },
+  orbArea: { alignItems: "center", justifyContent: "center", width: 216, height: 216 },
+  orbHaloOuter: {
+    position: "absolute",
+    width: 202,
+    height: 202,
+    borderRadius: 101,
+    borderWidth: 2,
+  },
+  orbHalo: { position: "absolute", width: 172, height: 172, borderRadius: 86 },
+  orbCore: {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOpacity: 0.32,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+  },
+  phaseRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+  },
+  phaseDot: { width: 7, height: 7, borderRadius: 4 },
+  phaseText: { color: TEXT, fontSize: 17, lineHeight: 22, fontWeight: "600" },
+  error: { color: "#FF8D90", fontSize: 13, textAlign: "center", marginTop: 10, paddingHorizontal: 16 },
+  transcriptBox: {
+    width: "100%",
+    minHeight: 88,
+    maxHeight: 172,
+    backgroundColor: "#111111",
+    borderWidth: 1,
+    borderColor: "#292929",
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 18,
+    overflow: "hidden",
+  },
+  liveHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: ACCENT_ORB },
+  transcriptScroll: { maxHeight: 124 },
+  transcriptScrollContent: { flexGrow: 1, justifyContent: "flex-end" },
+  liveLabel: { color: ACCENT_ORB, fontSize: 12, fontWeight: "700" },
+  transcript: { color: "#E8E8E8", fontSize: 14, lineHeight: 21 },
+  bottomControls: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    gap: 34,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  controlGroup: { alignItems: "center", gap: 8, minWidth: 74 },
+  callControl: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: "#151515",
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  interruptControlActive: { backgroundColor: "#24150D", borderColor: "#753510" },
+  controlDisabled: { opacity: 0.7 },
+  controlPressed: { opacity: 0.72, transform: [{ scale: 0.95 }] },
+  controlLabel: { color: "#D8D8D8", fontSize: 12, lineHeight: 16, fontWeight: "600" },
+  controlLabelDisabled: { color: "#686868" },
   endCall: {
     width: 68,
     height: 68,
@@ -416,5 +574,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
   },
+  endCallPressed: { opacity: 0.8, transform: [{ scale: 0.94 }] },
 });

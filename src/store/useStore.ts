@@ -359,10 +359,8 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setProfile: async (text) => {
+    await AsyncStorage.setItem("@easytasky/profile", text);
     set({ profile: text });
-    try {
-      await AsyncStorage.setItem("@easytasky/profile", text);
-    } catch {}
   },
 
   toggleHabit: async (habitId, day, value = 1) => {

@@ -19,6 +19,8 @@ import NextDayPlanTool from "./src/components/NextDayPlanTool";
 import ShutdownRitualTool from "./src/components/ShutdownRitualTool";
 import ArchivedTasksTool from "./src/components/ArchivedTasksTool";
 import UpdateBanner from "./src/components/UpdateBanner";
+import AgentCallHost from "./src/components/AgentCallHost";
+import { useAgentStore } from "./src/store/useAgentStore";
 
 
 type TabKey = "tasks" | "chat" | "focus" | "habits" | "extras";
@@ -45,7 +47,7 @@ export default function App() {
   const [activeModal, setActiveModal] = useState<DrawerOptionKey | null>(null);
 
   useEffect(() => {
-    init();
+    void init().then(() => useAgentStore.getState().hydrate());
   }, [init]);
 
   // "Start focus" from anywhere (e.g. task detail) → jump to immersive Focus.
@@ -183,6 +185,7 @@ export default function App() {
           </SafeAreaView>
         )}
       </View>
+      <AgentCallHost />
     </SafeAreaProvider>
   );
 }

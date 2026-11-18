@@ -1,17 +1,16 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Easing, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import Markdown from "react-native-markdown-display";
-import { aiEnabled, chatWithTools, getAiConfig } from "../lib/aiClient";
-import { helpText, listAgents, parseInvocation, proposalsFromToolCalls } from "../lib/agents";
-import type { BlockProposal } from "../lib/agents";
+import { aiEnabled, getAiConfig } from "../lib/aiClient";
+import { helpText, listAgents, parseInvocation } from "../lib/agents";
 import { synthesizeSpeech } from "../lib/talk";
+import type { AgentMessage } from "../lib/agentActions";
 import { createAudioPlayer } from "expo-audio";
-import CallModeModal from "../components/CallModeModal";
-import { useStore } from "../store/useStore";
-import { dayKey } from "../utils/time";
+import { useAgentStore } from "../store/useAgentStore";
 import SettingsModal from "../components/SettingsModal";
+import AgentHistoryPanel from "../components/AgentHistoryPanel";
 
 const BG = "#141414";
 const BUBBLE_ME = "#FA6E1E";
@@ -20,8 +19,6 @@ const BUBBLE_AI = "#1E1E1E";
 const LINE = "#262626";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
-
-type Msg = { role: "user" | "assistant"; content: string };
 
 const PHASES: [number, number, number][] = [
   [0, 0.33, 0.66],
@@ -79,16 +76,26 @@ export default function AgentScreen() {
     };
   }, []);
 
-  const [messages, setMessages] = useState<Msg[]>([
-    { role: "assistant", content: "Hi, I'm your agent. Ask me to plan, draft tasks, or estimate. Or just chat." },
-  ]);
+  const messages = useAgentStore((s) => s.messages);
+  const busy = useAgentStore((s) => s.busy);
+  const typing = useAgentStore((s) => s.typing);
+  const sendMessage = useAgentStore((s) => s.send);
+  const appendLocal = useAgentStore((s) => s.appendLocal);
+  const clearChat = useAgentStore((s) => s.clearChat);
+  const sessions = useAgentStore((s) => s.sessions);
+  const chatSessionId = useAgentStore((s) => s.chatSessionId);
+  const refreshHistory = useAgentStore((s) => s.refreshHistory);
+  const deleteSession = useAgentStore((s) => s.deleteSession);
+  const resumeSession = useAgentStore((s) => s.resumeSession);
+  const callOpen = useAgentStore((s) => s.callOpen);
+  const callMinimized = useAgentStore((s) => s.callMinimized);
+  const startCall = useAgentStore((s) => s.startCall);
+  const restoreCall = useAgentStore((s) => s.restoreCall);
+
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [typing, setTyping] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [aiReady, setAiReady] = useState(aiEnabled());
-  const [callOpen, setCallOpen] = useState(false);
-  const [callMinimized, setCallMinimized] = useState(false);
   const [playingMsgIndex, setPlayingMsgIndex] = useState<number | null>(null);
   const [speakingLoadingIndex, setSpeakingLoadingIndex] = useState<number | null>(null);
   const activePlayerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
@@ -154,301 +161,31 @@ export default function AgentScreen() {
   // Show agent suggestions while typing "/" or "@".
   const invHint = input.startsWith("/") || input.startsWith("@") ? listAgents() : [];
 
-  const buildContext = (): string => {
-    const state = useStore.getState();
-    const today = dayKey();
-    const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
-    const openTasks = state.tasks.filter((t) => t.status !== "done" && t.status !== "habit");
-    const todayBlocks = state.blocks.filter((b) => b.day === today).sort((a, b) => a.start_min - b.start_min);
-    const habits = state.tasks.filter((t) => t.is_habit === 1);
-    const sections = state.sections;
-
-    const parts: string[] = [];
-    parts.push("This is the user's CURRENT ACTUAL data in EasyTasky. You have full access and direct control over all of it.");
-    if (state.profile.trim()) {
-      parts.push(`About the user (their own words):\n${state.profile.trim()}`);
-    }
-    if (sections.length) {
-      parts.push(`Categories / Sections:\n${sections.map((s) => `- ${s.name}`).join("\n")}`);
-    }
-    if (openTasks.length) {
-      const shown = openTasks.slice(0, 20).map((t) => `- [${t.status}] ${t.title}${t.due_date ? ` (due ${t.due_date})` : ""}${t.quadrant ? ` (${t.quadrant})` : ""}`);
-      parts.push(`Open tasks:\n${shown.join("\n")}`);
-    }
-    if (habits.length) {
-      const shownHabits = habits.map((h) => {
-        const check = state.habitChecks.find((c) => c.habit_id === h.id && c.day === today);
-        const val = check?.value ?? (check ? 1 : 0);
-        return `- ${h.title} (type: ${h.habit_type || "boolean"}, today: ${val}/${h.habit_target_value || 1} ${h.habit_unit || "times"})`;
-      });
-      parts.push(`Habits:\n${shownHabits.join("\n")}`);
-    }
-    if (todayBlocks.length) {
-      const shown = todayBlocks.map((b) => `- ${fmt24(b.start_min)}-${fmt24(b.end_min)} ${b.label} (${b.type})`);
-      parts.push(`Today's time blocks:\n${shown.join("\n")}`);
-    } else {
-      parts.push("Today's time blocks: (none)");
-    }
-    const note = state.getDailyNote(today);
-    if (note.trim()) {
-      parts.push(`Today's note/journal:\n${note.trim()}`);
-    }
-    if (state.shutdownRituals.length) {
-      const shownRituals = state.shutdownRituals.map((r) => {
-        const checked = state.shutdownChecks.some((c) => c.ritual_id === r.id && c.day === today);
-        return `- [${checked ? "x" : " "}] ${r.title}`;
-      });
-      parts.push(`Shutdown rituals (today):\n${shownRituals.join("\n")}`);
-    }
-    const pomo = state.pomo;
-    const taskRunning = pomo.taskId ? state.tasks.find((t) => t.id === pomo.taskId)?.title : undefined;
-    parts.push(`Focus Timer / Pomodoro: ${pomo.running ? `RUNNING (${pomo.mode}, ${Math.ceil(pomo.left / 60)} min left)` : "IDLE"}${taskRunning ? ` for task: "${taskRunning}"` : ""}`);
-    return parts.join("\n\n");
-  };
-
-  const executeProposals = async (proposals: BlockProposal[]): Promise<string> => {
-    const state = useStore.getState();
-    const applied: string[] = [];
-    const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
-    const today = dayKey();
-
-    for (const p of proposals) {
-      if (p.kind === "addBlock") {
-        await state.addBlock(p.block);
-        applied.push(`added time block "${p.block.label}" ${fmt24(p.block.start_min)}-${fmt24(p.block.end_min)}`);
-      } else if (p.kind === "updateBlock") {
-        const b = state.blocks.find((x) => x.id === p.id);
-        await state.updateBlock(p.id, p.patch);
-        applied.push(`updated time block "${b?.label ?? "#" + p.id}"`);
-      } else if (p.kind === "deleteBlock") {
-        const b = state.blocks.find((x) => x.id === p.id);
-        await state.deleteBlock(p.id);
-        applied.push(`removed time block "${b?.label ?? "#" + p.id}"`);
-      } else if (p.kind === "createSection") {
-        await state.addSection(p.name, p.color);
-        applied.push(`created category "${p.name}"`);
-      } else if (p.kind === "deleteSection") {
-        const sec = state.sections.find((s) => s.name.toLowerCase() === p.name.toLowerCase());
-        if (sec) {
-          await state.deleteSection(sec.id);
-          applied.push(`deleted category "${p.name}"`);
-        }
-      } else if (p.kind === "addTask") {
-        let secId: string | undefined;
-        if (p.task.section_name) {
-          const sec = state.sections.find((s) => s.name.toLowerCase() === p.task.section_name?.toLowerCase());
-          if (sec) secId = sec.id;
-        }
-        await state.addTask({
-          title: p.task.title,
-          context: p.task.context,
-          energy: p.task.energy as any,
-          quadrant: p.task.quadrant as any,
-          due_date: p.task.due_date,
-          estimated_min: p.task.estimated_min,
-          note: p.task.note,
-          section_id: secId,
-        });
-        applied.push(`created task "${p.task.title}"`);
-      } else if (p.kind === "updateTask") {
-        const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.find.toLowerCase()));
-        if (t) {
-          await state.updateTask(t.id, p.patch as any);
-          applied.push(`updated task "${t.title}"`);
-        }
-      } else if (p.kind === "deleteTask") {
-        const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.find.toLowerCase()));
-        if (t) {
-          await state.deleteTask(t.id);
-          applied.push(`deleted task "${t.title}"`);
-        }
-      } else if (p.kind === "completeTask") {
-        const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.find.toLowerCase()));
-        if (t) {
-          await state.updateTask(t.id, { status: "done" });
-          applied.push(`completed task "${t.title}"`);
-        }
-      } else if (p.kind === "addSubtask") {
-        const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.taskFind.toLowerCase()));
-        if (t) {
-          await state.addSubtask(t.id, p.title);
-          applied.push(`added subtask "${p.title}" to "${t.title}"`);
-        }
-      } else if (p.kind === "toggleSubtask") {
-        const st = state.subtasks.find((s) => s.title.toLowerCase().includes(p.subtaskTitle.toLowerCase()));
-        if (st) {
-          await state.toggleSubtask(st.id);
-          applied.push(`toggled subtask "${st.title}"`);
-        }
-      } else if (p.kind === "addHabit") {
-        const isQ = p.habit.habit_type === "quantity" || (p.habit.target_value ?? 1) > 1;
-        await state.addTask({
-          title: p.habit.title,
-          status: "habit",
-          is_habit: 1,
-          habit_type: isQ ? "quantity" : "boolean",
-          habit_target_value: p.habit.target_value ?? 1,
-          habit_unit: p.habit.unit ?? (isQ ? "times" : undefined),
-          habit_color: p.habit.color ?? "#FA6E1E",
-          habit_freq: p.habit.freq ?? "daily",
-        });
-        applied.push(`created habit "${p.habit.title}"`);
-      } else if (p.kind === "logHabit") {
-        const h = state.tasks.find((x) => x.is_habit === 1 && x.title.toLowerCase().includes(p.find.toLowerCase()));
-        if (h) {
-          await state.logHabitValue(h.id, today, p.value);
-          applied.push(`logged ${p.value} for habit "${h.title}"`);
-        }
-      } else if (p.kind === "deleteHabit") {
-        const h = state.tasks.find((x) => x.is_habit === 1 && x.title.toLowerCase().includes(p.find.toLowerCase()));
-        if (h) {
-          await state.deleteTask(h.id);
-          applied.push(`deleted habit "${h.title}"`);
-        }
-      } else if (p.kind === "addShutdownRitual") {
-        await state.addShutdownRitual(p.title);
-        applied.push(`added shutdown ritual "${p.title}"`);
-      } else if (p.kind === "deleteShutdownRitual") {
-        const rit = state.shutdownRituals.find((r) => r.title.toLowerCase().includes(p.find.toLowerCase()));
-        if (rit) {
-          await state.deleteShutdownRitual(rit.id);
-          applied.push(`deleted shutdown ritual "${rit.title}"`);
-        }
-      } else if (p.kind === "toggleShutdownRitual") {
-        const rit = state.shutdownRituals.find((r) => r.title.toLowerCase().includes(p.find.toLowerCase()));
-        if (rit) {
-          await state.toggleShutdownCheck(rit.id, today);
-          applied.push(`checked off shutdown ritual "${rit.title}"`);
-        }
-      } else if (p.kind === "startFocusTimer") {
-        if (p.durationMin) {
-          state.setFocusMin(p.durationMin);
-        }
-        if (p.taskFind) {
-          const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.taskFind!.toLowerCase()));
-          if (t) {
-            state.startFocusFor(t.id);
-            applied.push(`started focus timer for "${t.title}"`);
-          } else {
-            state.startPomo();
-            applied.push(`started focus timer (${p.durationMin ?? 25} min)`);
-          }
-        } else {
-          state.startPomo();
-          applied.push(`started focus timer (${p.durationMin ?? 25} min)`);
-        }
-      } else if (p.kind === "stopFocusTimer") {
-        if (p.action === "reset") {
-          state.resetPomo();
-          applied.push(`reset focus timer`);
-        } else {
-          state.pausePomo();
-          applied.push(`paused focus timer`);
-        }
-      } else if (p.kind === "saveDailyNote") {
-        const noteDay = p.day || today;
-        await state.saveDailyNote(noteDay, p.content);
-        applied.push(`saved daily note for ${noteDay}`);
-      } else if (p.kind === "updateUserProfile") {
-        await state.setProfile(p.profile);
-        applied.push(`updated your profile information`);
-      }
-    }
-
-    if (!applied.length) {
-      return "हाँजी, हो गया!";
-    }
-    if (applied.length === 1) {
-      return `हो गया! ${applied[0]} कर दिया है।`;
-    }
-    return `बिल्कुल हो गया! ये सब निपटा दिया:\n${applied.map((a) => `• ${a}`).join("\n")}`;
-  };
-
-  const submit = async (text: string, base: Msg[]) => {
+  const submit = async (text: string, base?: AgentMessage[]) => {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
 
     const inv = parseInvocation(trimmed);
     if (inv && inv.token === "help") {
-      setMessages([...base, { role: "user", content: trimmed }, { role: "assistant", content: helpText() }]);
+      appendLocal(trimmed, helpText(), base);
       setInput("");
       return;
     }
     if (inv) {
-      setMessages([
-        ...base,
-        { role: "user", content: trimmed },
-        { role: "assistant", content: `Unknown command "/${inv.token}". Only /help is a command — otherwise just ask the agent naturally.` },
-      ]);
+      appendLocal(
+        trimmed,
+        `Unknown command "/${inv.token}". Only /help is a command — otherwise just ask the agent naturally.`,
+        base
+      );
       setInput("");
       return;
     }
 
-    const next: Msg[] = [...base, { role: "user", content: trimmed }];
-    setMessages(next);
     setInput("");
-    setBusy(true);
-    setTyping(true);
-    try {
-      if (!aiEnabled()) {
-        throw new Error("AI not configured. Tap the gear above to add your API settings.");
-      }
-      const reply = await chatWithTools(next, buildContext());
-      if (reply.toolCalls && reply.toolCalls.length) {
-        const { proposals, note } = proposalsFromToolCalls(reply.toolCalls, useStore.getState().blocks);
-        if (proposals.length) {
-          const appliedSummary = await executeProposals(proposals);
-          const fullContent = `${appliedSummary}${note ? `\n\n${note}` : ""}`;
-          setMessages((m) => [...m, { role: "assistant", content: fullContent }]);
-        } else {
-          const content = note ?? "I couldn't plan that change.";
-          setMessages((m) => [...m, { role: "assistant", content }]);
-        }
-      } else {
-        const content = reply.text ?? "";
-        setMessages((m) => [...m, { role: "assistant", content }]);
-      }
-    } catch (e) {
-      setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${e instanceof Error ? e.message : "Request failed"}` }]);
-    } finally {
-      setBusy(false);
-      setTyping(false);
-    }
+    await sendMessage(trimmed, base);
   };
 
   const send = () => submit(input, messages);
-
-  const handleCallResult = useCallback(async (text: string): Promise<string> => {
-    const next: Msg[] = [...messages, { role: "user", content: text }];
-    setMessages(next);
-    try {
-      const reply = await chatWithTools(next, buildContext());
-      if (reply.toolCalls && reply.toolCalls.length) {
-        const { proposals, note } = proposalsFromToolCalls(reply.toolCalls, useStore.getState().blocks);
-        if (proposals.length) {
-          const appliedSummary = await executeProposals(proposals);
-          const content = `${appliedSummary}${note ? `\n\n${note}` : ""}`;
-          setMessages((m) => [...m, { role: "assistant", content }]);
-          return content;
-        }
-        const content = note ?? "I couldn't act on that.";
-        setMessages((m) => [...m, { role: "assistant", content }]);
-        return content;
-      }
-      const content = reply.text ?? "";
-      setMessages((m) => [...m, { role: "assistant", content }]);
-      return content;
-    } catch (e) {
-      const content = e instanceof Error ? e.message : "Request failed";
-      setMessages((m) => [...m, { role: "assistant", content }]);
-      return content;
-    }
-  }, [messages]);
-
-  const handleCallClose = useCallback(() => {
-    setCallOpen(false);
-    setCallMinimized(false);
-  }, []);
 
   const copyMessage = async (content: string) => {
     try {
@@ -478,6 +215,14 @@ export default function AgentScreen() {
         </View>
         <Pressable
           style={styles.clearBtn}
+          onPress={() => setHistoryOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Chat and call history"
+        >
+          <Ionicons name="menu" size={20} color={SUB} />
+        </Pressable>
+        <Pressable
+          style={styles.clearBtn}
           onPress={() => setSettings(true)}
           accessibilityRole="button"
           accessibilityLabel="AI settings"
@@ -488,14 +233,12 @@ export default function AgentScreen() {
           <Pressable
             style={styles.clearBtn}
             onPress={() => {
-              setMessages([{ role: "assistant", content: "Hi, I'm your agent. Ask me to plan, draft tasks, or estimate. Or just chat." }]);
-              setTyping(false);
-              setBusy(false);
+              void clearChat();
             }}
             accessibilityRole="button"
-            accessibilityLabel="Clear chat"
+            accessibilityLabel="New chat"
           >
-            <Ionicons name="trash-outline" size={18} color={SUB} />
+            <Ionicons name="add" size={22} color={SUB} />
           </Pressable>
         )}
       </View>
@@ -593,10 +336,9 @@ export default function AgentScreen() {
           style={[styles.micBtn, (callOpen && callMinimized) && styles.micBtnActive]}
           onPress={() => {
             if (callOpen && callMinimized) {
-              setCallMinimized(false);
+              restoreCall();
             } else {
-              setCallOpen(true);
-              setCallMinimized(false);
+              void startCall();
             }
           }}
           accessibilityRole="button"
@@ -609,36 +351,20 @@ export default function AgentScreen() {
         </Pressable>
       </View>
 
-      {/* Floating minimized call indicator if minimized */}
-      {callOpen && callMinimized && (
-        <Pressable
-          style={styles.minimizedCallBar}
-          onPress={() => setCallMinimized(false)}
-          accessibilityRole="button"
-          accessibilityLabel="Restore voice call"
-        >
-          <View style={styles.minimizedPulseDot} />
-          <Ionicons name="call" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.minimizedCallText}>Call in progress · Tap to maximize</Text>
-          <Pressable
-            style={styles.minimizedHangup}
-            onPress={handleCallClose}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Hang up call"
-          >
-            <Ionicons name="close" size={18} color="#FFFFFF" />
-          </Pressable>
-        </Pressable>
-      )}
-
-      {callOpen && !callMinimized && (
-        <CallModeModal
-          onSend={handleCallResult}
-          onClose={handleCallClose}
-          onMinimize={() => setCallMinimized(true)}
+      <Modal
+        visible={historyOpen}
+        animationType="slide"
+        onRequestClose={() => setHistoryOpen(false)}
+      >
+        <AgentHistoryPanel
+          sessions={sessions}
+          activeChatId={chatSessionId}
+          onClose={() => setHistoryOpen(false)}
+          onRefresh={refreshHistory}
+          onDelete={deleteSession}
+          onResume={(session) => resumeSession(session.id)}
         />
-      )}
+      </Modal>
     </View>
   );
 }
@@ -666,7 +392,7 @@ const mdStyles = {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
+  header: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
   h1: { color: TEXT, fontSize: 26, fontWeight: "600" },
   headerSub: { color: SUB, fontSize: 12, marginTop: 2 },
   clearBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "#1E1E1E", borderWidth: 1, borderColor: LINE },
@@ -715,44 +441,4 @@ const styles = StyleSheet.create({
   micBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: ACCENT, alignItems: "center", justifyContent: "center" },
   micBtnActive: { backgroundColor: ACCENT },
   talkBtnOn: { backgroundColor: ACCENT },
-  minimizedCallBar: {
-    position: "absolute",
-    top: 54,
-    left: 16,
-    right: 16,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#1C1C1C",
-    borderWidth: 1.5,
-    borderColor: ACCENT,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  minimizedPulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: ACCENT,
-    marginRight: 10,
-  },
-  minimizedCallText: {
-    flex: 1,
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  minimizedHangup: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#E5484D",
-    alignItems: "center",
-    justifyContent: "center",
-  },
 });
