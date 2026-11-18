@@ -260,45 +260,55 @@ export default function CallModeModal({ onSend, onClose }: Props) {
             <Text style={styles.tapInterruptText}>Tap anywhere to interrupt</Text>
           </Pressable>
         ) : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        {diag ? <Text style={styles.diag}>{diag}</Text> : null}
+        {error ? <Text style={styles.error} numberOfLines={2}>{error}</Text> : null}
 
-        <View style={styles.transcriptBox}>
-          {live ? (
-            <Text style={styles.liveLabel}>You (live):</Text>
-          ) : null}
-          <ScrollView
-            ref={transcriptScrollRef}
-            style={styles.transcriptScroll}
-            contentContainerStyle={styles.transcriptScrollContent}
-            onContentSizeChange={() => {
-              transcriptScrollRef.current?.scrollToEnd({ animated: true });
-            }}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.transcript}>
-              {live ? live : transcript || "The call is live. Say something."}
+        {/* Scrollable, strictly contained text area */}
+        <View style={styles.centerContainer}>
+          {diag ? (
+            <Text style={styles.diag} numberOfLines={1} ellipsizeMode="tail">
+              {diag}
             </Text>
-          </ScrollView>
+          ) : null}
+          <View style={styles.transcriptBox}>
+            {live ? (
+              <Text style={styles.liveLabel}>You (live):</Text>
+            ) : null}
+            <ScrollView
+              ref={transcriptScrollRef}
+              style={styles.transcriptScroll}
+              contentContainerStyle={styles.transcriptScrollContent}
+              onContentSizeChange={() => {
+                transcriptScrollRef.current?.scrollToEnd({ animated: true });
+              }}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.transcript}>
+                {live ? live : transcript || "The call is live. Say something."}
+              </Text>
+            </ScrollView>
+          </View>
         </View>
 
-        <Pressable style={styles.endCall} onPress={onClose} accessibilityRole="button" accessibilityLabel="End call">
-          <Ionicons name="call" size={26} color="#FFFFFF" style={{ transform: [{ rotate: "135deg" }] }} />
-        </Pressable>
+        {/* Fixed bottom disconnect button: permanently in-view */}
+        <View style={styles.bottomBar}>
+          <Pressable style={styles.endCall} onPress={onClose} accessibilityRole="button" accessibilityLabel="End call">
+            <Ionicons name="call" size={26} color="#FFFFFF" style={{ transform: [{ rotate: "135deg" }] }} />
+          </Pressable>
+        </View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BG, alignItems: "center", justifyContent: "space-between", padding: 24 },
+  root: { flex: 1, backgroundColor: BG, alignItems: "center", justifyContent: "space-between", padding: 20 },
   title: { color: SUB, fontSize: 16, fontWeight: "700", letterSpacing: 0.5 },
-  orbArea: { alignItems: "center", justifyContent: "center", width: 220, height: 220 },
-  orbHalo: { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(250,110,30,0.25)" },
+  orbArea: { alignItems: "center", justifyContent: "center", width: 190, height: 190 },
+  orbHalo: { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: "rgba(250,110,30,0.25)" },
   orbCore: {
-    width: 116,
-    height: 116,
-    borderRadius: 58,
+    width: 104,
+    height: 104,
+    borderRadius: 52,
     backgroundColor: ACCENT_ORB,
     alignItems: "center",
     justifyContent: "center",
@@ -307,7 +317,7 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 0 },
   },
-  status: { color: TEXT, fontSize: 22, fontWeight: "700" },
+  status: { color: TEXT, fontSize: 20, fontWeight: "700" },
   tapInterruptBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -316,21 +326,35 @@ const styles = StyleSheet.create({
     borderColor: "rgba(250,110,30,0.4)",
     borderRadius: 20,
     paddingHorizontal: 14,
-    paddingVertical: 6,
-    marginTop: 8,
+    paddingVertical: 5,
+    marginTop: 6,
   },
   tapInterruptText: { color: ACCENT_ORB, fontSize: 13, fontWeight: "600" },
-  error: { color: RED, fontSize: 14, textAlign: "center", marginTop: 8, paddingHorizontal: 16 },
-  diag: { color: SUB, fontSize: 11, textAlign: "center", marginTop: 6, paddingHorizontal: 16 },
-  transcriptBox: { alignSelf: "stretch", backgroundColor: "#111111", borderRadius: 16, padding: 16, height: 180, justifyContent: "flex-start" },
+  error: { color: RED, fontSize: 13, textAlign: "center", marginTop: 4, paddingHorizontal: 16 },
+  centerContainer: {
+    width: "100%",
+    flex: 1,
+    maxHeight: 220,
+    marginVertical: 12,
+    justifyContent: "flex-end",
+  },
+  diag: { color: SUB, fontSize: 11, textAlign: "center", marginBottom: 6, paddingHorizontal: 10 },
+  transcriptBox: { flex: 1, backgroundColor: "#111111", borderRadius: 16, padding: 14, overflow: "hidden" },
   transcriptScroll: { flex: 1 },
   transcriptScrollContent: { flexGrow: 1, justifyContent: "flex-end" },
   liveLabel: { color: ACCENT_ORB, fontSize: 12, fontWeight: "700", marginBottom: 4 },
-  transcript: { color: TEXT, fontSize: 15, lineHeight: 22 },
+  transcript: { color: TEXT, fontSize: 14, lineHeight: 21 },
+  bottomBar: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
   endCall: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: RED,
     alignItems: "center",
     justifyContent: "center",
