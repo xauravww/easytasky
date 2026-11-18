@@ -78,16 +78,49 @@ export const prewarmTalkSession = (): void => {
   }).catch(() => {});
 };
 
+// Clean assistant text for pleasant, natural Text-to-Speech
+export const sanitizeForTTS = (text: string): string => {
+  if (!text) return "";
+  let t = text
+    // Remove markdown code blocks and inline code
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    // Remove bold/italics
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    // Remove markdown links [title](url) -> title
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    // Remove bullets and numbering
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    // Remove common emojis & symbol glyphs that TTS stumbles on
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}]/gu, "")
+    // Turn newlines into natural sentence pauses
+    .replace(/[\r\n]+/g, ". ")
+    // Collapse spaces and repetitive punctuation
+    .replace(/\s+/g, " ")
+    .replace(/\.{2,}/g, ".")
+    .trim();
+
+  // If text begins with "Completed:." or "Completed.", soften it
+  t = t.replace(/^Completed:\.?\s*/i, "Done! ");
+  return t;
+};
+
 // ---- Text to Speech (HeyGen): returns an audio URL to play ----
 export const synthesizeSpeech = async (text: string): Promise<string> => {
   if (!heygenKey) throw new Error("Add your HeyGen API key in Agent → Talk settings.");
+  const cleanText = sanitizeForTTS(text);
+  if (!cleanText) return "";
   const res = await fetch(HEYGEN_TTS_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Api-Key": heygenKey },
     body: JSON.stringify({
       model: HEYGEN_MODEL,
       voice_id: selectedVoiceId,
-      text: text.slice(0, 10000),
+      text: cleanText.slice(0, 5000),
       language: selectedSpeechLang.startsWith("hi") ? "hi" : "en",
     }),
   });
@@ -108,13 +141,15 @@ export const synthesizeSpeechStream = async function* (
   text: string
 ): AsyncGenerator<Uint8Array, void, undefined> {
   if (!heygenKey) throw new Error("Add your HeyGen API key in Agent → Talk settings.");
+  const cleanText = sanitizeForTTS(text);
+  if (!cleanText) return;
   const res = await fetch(HEYGEN_TTS_STREAM_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Api-Key": heygenKey, Accept: "text/event-stream" },
     body: JSON.stringify({
       model: HEYGEN_MODEL,
       voice_id: selectedVoiceId,
-      text: text.slice(0, 10000),
+      text: cleanText.slice(0, 5000),
       language: selectedSpeechLang.startsWith("hi") ? "hi" : "en",
     }),
   });

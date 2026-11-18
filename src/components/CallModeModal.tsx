@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { startVoice, stopVoice, synthesizeSpeech, prewarmTalkSession } from "../lib/talk";
@@ -25,6 +25,7 @@ export default function CallModeModal({ onSend, onClose }: Props) {
   const [transcript, setTranscript] = useState("");
   const [live, setLive] = useState("");
   const [diag, setDiag] = useState("");
+  const transcriptScrollRef = useRef<any>(null);
   const onSendRef = useRef(onSend);
   const cancelledRef = useRef(false);
   const interruptRef = useRef<(() => void) | null>(null);
@@ -266,9 +267,19 @@ export default function CallModeModal({ onSend, onClose }: Props) {
           {live ? (
             <Text style={styles.liveLabel}>You (live):</Text>
           ) : null}
-          <Text style={styles.transcript}>
-            {live ? live : transcript || "The call is live. Say something."}
-          </Text>
+          <ScrollView
+            ref={transcriptScrollRef}
+            style={styles.transcriptScroll}
+            contentContainerStyle={styles.transcriptScrollContent}
+            onContentSizeChange={() => {
+              transcriptScrollRef.current?.scrollToEnd({ animated: true });
+            }}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.transcript}>
+              {live ? live : transcript || "The call is live. Say something."}
+            </Text>
+          </ScrollView>
         </View>
 
         <Pressable style={styles.endCall} onPress={onClose} accessibilityRole="button" accessibilityLabel="End call">
@@ -311,9 +322,11 @@ const styles = StyleSheet.create({
   tapInterruptText: { color: ACCENT_ORB, fontSize: 13, fontWeight: "600" },
   error: { color: RED, fontSize: 14, textAlign: "center", marginTop: 8, paddingHorizontal: 16 },
   diag: { color: SUB, fontSize: 11, textAlign: "center", marginTop: 6, paddingHorizontal: 16 },
-  transcriptBox: { alignSelf: "stretch", backgroundColor: "#111111", borderRadius: 16, padding: 16, minHeight: 130, maxHeight: 220, justifyContent: "flex-start" },
+  transcriptBox: { alignSelf: "stretch", backgroundColor: "#111111", borderRadius: 16, padding: 16, height: 180, justifyContent: "flex-start" },
+  transcriptScroll: { flex: 1 },
+  transcriptScrollContent: { flexGrow: 1, justifyContent: "flex-end" },
   liveLabel: { color: ACCENT_ORB, fontSize: 12, fontWeight: "700", marginBottom: 4 },
-  transcript: { color: TEXT, fontSize: 14, lineHeight: 21 },
+  transcript: { color: TEXT, fontSize: 15, lineHeight: 22 },
   endCall: {
     width: 72,
     height: 72,
