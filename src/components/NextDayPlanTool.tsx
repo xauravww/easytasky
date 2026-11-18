@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -19,7 +20,6 @@ const LINE = "#262626";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
 const ACCENT = "#FA6E1E";
-const ON_ACCENT = "#FFFFFF";
 
 const fmtDateDisplay = (key: string) => {
   const d = new Date(key + "T00:00:00");
@@ -33,15 +33,22 @@ export default function NextDayPlanTool() {
 
   const saveDailyNote = useStore((s) => s.saveDailyNote);
   const getDailyNote = useStore((s) => s.getDailyNote);
-  const tasks = useStore((s) => s.tasks);
-  const addTask = useStore((s) => s.addTask);
   const addShutdownRitual = useStore((s) => s.addShutdownRitual);
   const shutdownRituals = useStore((s) => s.shutdownRituals);
 
   const [prevKey, setPrevKey] = useState(currentKey);
   const [noteText, setNoteText] = useState(() => getDailyNote(currentKey));
   const [savedStatus, setSavedStatus] = useState("");
-  const [taskInput, setTaskInput] = useState("");
+  const [keyboardH, setKeyboardH] = useState(0);
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) => setKeyboardH(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardH(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   if (currentKey !== prevKey) {
     setPrevKey(currentKey);
@@ -56,18 +63,6 @@ export default function NextDayPlanTool() {
     setTimeout(() => setSavedStatus(""), 2000);
   };
 
-  const handleAddTask = () => {
-    const clean = taskInput.trim();
-    if (!clean) return;
-    addTask({
-      title: clean,
-      due_date: currentKey,
-      status: "inbox",
-      quadrant: "not_urgent_important",
-    });
-    setTaskInput("");
-  };
-
   // Sync to Shutdown Ritual as an item to complete
   const syncToShutdownRitual = async () => {
     const ritualTitle = `Review Next-Day Plan (${fmtDateDisplay(currentKey)})`;
@@ -79,16 +74,18 @@ export default function NextDayPlanTool() {
     setTimeout(() => setSavedStatus(""), 3000);
   };
 
-  const plannedTasks = tasks.filter(
-    (t) => t.due_date === currentKey && t.status !== "done" && t.status !== "unwanted"
-  );
-
   return (
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: Math.max(keyboardH, 50) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Date switcher header */}
         <View style={styles.dateBar}>
           <Pressable
@@ -156,36 +153,6 @@ export default function NextDayPlanTool() {
           <Ionicons name="sync-outline" size={18} color="#FFFFFF" />
           <Text style={styles.syncBtnText}>Add &quot;Review Next-Day Plan&quot; to Shutdown Ritual</Text>
         </Pressable>
-
-        {/* Specific quick task additions for this day */}
-        <View style={styles.tasksSection}>
-          <Text style={styles.sectionTitle}>Tasks Due On {fmtDateDisplay(currentKey)}</Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.taskInput}
-              value={taskInput}
-              onChangeText={setTaskInput}
-              placeholder="Add specific task..."
-              placeholderTextColor={SUB}
-              onSubmitEditing={handleAddTask}
-              returnKeyType="done"
-            />
-            <Pressable style={styles.addBtn} onPress={handleAddTask}>
-              <Ionicons name="add" size={20} color={ON_ACCENT} />
-            </Pressable>
-          </View>
-
-          {plannedTasks.length === 0 ? (
-            <Text style={styles.emptyTasks}>No explicit tasks due on this date yet.</Text>
-          ) : (
-            plannedTasks.map((t) => (
-              <View key={t.id} style={styles.taskItem}>
-                <Ionicons name="ellipse-outline" size={14} color={ACCENT} />
-                <Text style={styles.taskItemTitle}>{t.title}</Text>
-              </View>
-            ))
-          )}
-        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -266,42 +233,4 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   syncBtnText: { color: TEXT, fontSize: 13, fontWeight: "600" },
-  tasksSection: {
-    backgroundColor: CARD,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: LINE,
-    padding: 16,
-  },
-  sectionTitle: { color: TEXT, fontSize: 15, fontWeight: "700", marginBottom: 12 },
-  inputRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-  taskInput: {
-    flex: 1,
-    backgroundColor: "#141414",
-    borderWidth: 1,
-    borderColor: LINE,
-    borderRadius: 10,
-    color: TEXT,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-  },
-  addBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: ACCENT,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyTasks: { color: SUB, fontSize: 13, fontStyle: "italic", paddingVertical: 8 },
-  taskItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: LINE,
-  },
-  taskItemTitle: { color: TEXT, fontSize: 14 },
 });

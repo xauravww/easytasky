@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -73,6 +74,16 @@ export default function CategoriesScreen({ onBack }: Props) {
   const [name, setName] = useState("");
   const [color, setColor] = useState(PRESET_COLORS[0]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [keyboardH, setKeyboardH] = useState(0);
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) => setKeyboardH(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardH(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   // Compute Task Count Map
   const taskCountMap = useMemo(() => {
@@ -374,7 +385,7 @@ export default function CategoriesScreen({ onBack }: Props) {
               setEditingSec(null);
             }}
           />
-          <View style={[styles.drawerSheet, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
+          <View style={[styles.drawerSheet, { paddingBottom: Math.max(keyboardH, Math.max(insets.bottom, 16) + 12) }]}>
             <View style={styles.drawerHandleBar} />
             <View style={styles.drawerHeader}>
               <Text style={styles.drawerTitle}>{editingSec ? "Edit Category" : "New Category"}</Text>

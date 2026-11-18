@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { Alert, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Markdown from "react-native-markdown-display";
 import type { Task } from "../db/database";
 import { fmtDue } from "../utils/taskFormat";
-import { dayKey } from "../utils/time";
+import { addDays, dayKey, parseDay } from "../utils/time";
 import { useStore } from "../store/useStore";
 import CustomTimePicker from "./CustomTimePicker";
 import SearchablePickerModal from "./SearchablePickerModal";
@@ -31,6 +32,12 @@ const QUADRANTS = [
   { key: "not_urgent_important", label: "Schedule" },
   { key: "urgent_not_important", label: "Delegate" },
   { key: "neither", label: "Eliminate" },
+] as const;
+
+const QUICK_DATES = [
+  { label: "Today", offset: 0 },
+  { label: "Tomorrow", offset: 1 },
+  { label: "Next week", offset: 7 },
 ] as const;
 
 type Props = {
@@ -60,10 +67,12 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
   const [quadrant, setQuadrant] = useState(task.quadrant ?? "not_urgent_important");
   const [energy, setEnergy] = useState<Task["energy"]>(task.energy);
   const [repeatRule, setRepeatRule] = useState(task.repeat_rule ?? null);
+  const [dueDate, setDueDate] = useState(task.due_date ?? null);
   const [remindTime, setRemindTime] = useState(task.remind_time ?? null);
   const [sectionId, setSectionId] = useState(task.section_id ?? null);
   const [subInput, setSubInput] = useState("");
   const [editingNote, setEditingNote] = useState(!task.note);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [showDependencyPicker, setShowDependencyPicker] = useState(false);
@@ -90,9 +99,31 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
       quadrant,
       energy,
       repeat_rule: repeatRule,
+      due_date: dueDate,
       remind_time: remindTime,
       section_id: sectionId,
     });
+  };
+
+  const setTaskDueDate = (date: Date) => {
+    const nextDueDate = dayKey(date);
+    setDueDate(nextDueDate);
+    setShowDatePicker(false);
+    void updateTask(task.id, { due_date: nextDueDate });
+  };
+
+  const handleDateChange = (event: DateTimePickerEvent, date?: Date) => {
+    setShowDatePicker(false);
+    if (event.type === "dismissed" || !date) return;
+    setTaskDueDate(date);
+  };
+
+  const clearScheduleDate = () => {
+    setDueDate(null);
+    setRemindTime(null);
+    setShowDatePicker(false);
+    setShowTimePicker(false);
+    void updateTask(task.id, { due_date: null, remind_time: null });
   };
 
   const submitSub = () => {
@@ -118,12 +149,14 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
             multiline
           />
 
-          {(task.due_date || task.actual_min) && (
+          {(dueDate || task.actual_min || mine.length > 0) && (
             <View style={styles.metaRow}>
-              {task.due_date && (
+              {dueDate && (
                 <View style={styles.metaChip}>
-                  <Ionicons name="calendar-outline" size={13} color={task.due_date && task.due_date < dayKey() ? RED : SUB} />
-                  <Text style={styles.metaText}>{fmtDue(task.due_date)}</Text>
+                  <Ionicons name="calendar-outline" size={13} color={dueDate < dayKey() ? RED : SUB} />
+                  <Text style={styles.metaText}>
+                    {fmtDue(dueDate)}{remindTime ? ` · ${remindTime}` : ""}
+                  </Text>
                 </View>
               )}
               {!!task.actual_min && (
@@ -237,6 +270,111 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
               ))}
             </View>
 
+            <Text style={styles.label}>Schedule</Text>
+            <View style={styles.scheduleCard}>
+              <Pressable
+                style={({ pressed }) => [styles.scheduleRow, pressed && styles.scheduleRowPressed]}
+                onPress={() => setShowDatePicker((visible) => !visible)}
+                accessibilityRole="button"
+                accessibilityLabel={dueDate ? `Change due date, currently ${fmtDue(dueDate)}` : "Add due date"}
+              >
+                <View style={styles.scheduleIcon}>
+                  <Ionicons name="calendar-outline" size={18} color={dueDate ? ACCENT : SUB} />
+                </View>
+                <View style={styles.scheduleCopy}>
+                  <Text style={styles.scheduleTitle}>Date</Text>
+                  <Text style={[styles.scheduleValue, dueDate && styles.scheduleValueActive]}>
+                    {dueDate ? fmtDue(dueDate) : "Add due date"}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={IDLE} />
+              </Pressable>
+
+              {showDatePicker ? (
+                <View style={styles.datePickerWrap}>
+                  <DateTimePicker
+                    value={dueDate ? parseDay(dueDate) : new Date()}
+                    mode="date"
+                    display={Platform.OS === "ios" ? "compact" : "default"}
+                    themeVariant="dark"
+                    onChange={handleDateChange}
+                  />
+                </View>
+              ) : null}
+
+              <View style={styles.scheduleDivider} />
+
+              <Pressable
+                style={({ pressed }) => [styles.scheduleRow, pressed && styles.scheduleRowPressed]}
+                onPress={() => {
+                  if (dueDate) setShowTimePicker(true);
+                  else setShowDatePicker(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  dueDate
+                    ? remindTime
+                      ? `Change reminder time, currently ${remindTime}`
+                      : "Add reminder time"
+                    : "Add a due date before setting reminder time"
+                }
+              >
+                <View style={styles.scheduleIcon}>
+                  <Ionicons name="time-outline" size={18} color={remindTime ? ACCENT : SUB} />
+                </View>
+                <View style={styles.scheduleCopy}>
+                  <Text style={styles.scheduleTitle}>Time</Text>
+                  <Text style={[styles.scheduleValue, remindTime && styles.scheduleValueActive]}>
+                    {remindTime ?? (dueDate ? "Add reminder time" : "Add a date first")}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={IDLE} />
+              </Pressable>
+            </View>
+
+            <View style={styles.quickDateRow}>
+              {QUICK_DATES.map((option) => {
+                const date = addDays(new Date(), option.offset);
+                const selected = dueDate === dayKey(date);
+                return (
+                  <Pressable
+                    key={option.label}
+                    style={[styles.quickDateChip, selected && styles.quickDateChipActive]}
+                    onPress={() => setTaskDueDate(date)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                  >
+                    <Text style={[styles.quickDateText, selected && styles.quickDateTextActive]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+              {remindTime ? (
+                <Pressable
+                  style={styles.quickDateChip}
+                  onPress={() => {
+                    setRemindTime(null);
+                    void updateTask(task.id, { remind_time: null });
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear reminder time"
+                >
+                  <Text style={styles.quickDateText}>Clear time</Text>
+                </Pressable>
+              ) : null}
+              {dueDate ? (
+                <Pressable
+                  style={styles.quickDateChip}
+                  onPress={clearScheduleDate}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear due date and reminder time"
+                >
+                  <Text style={styles.quickDateText}>Clear date</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
             <Text style={styles.label}>Repeat</Text>
             <View style={styles.chipRow}>
               {([null, "daily", "weekly", "monthly"] as const).map((r) => (
@@ -298,38 +436,6 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
                 </Pressable>
               )}
             </View>
-
-            {/* Custom Time Picker Remind Setting (Item 16) */}
-            {task.due_date && (
-              <>
-                <Text style={styles.label}>Reminder Time</Text>
-                <View style={styles.chipRow}>
-                  <Pressable
-                    style={[styles.chip, remindTime !== null && styles.chipActive]}
-                    onPress={() => setShowTimePicker(true)}
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="time-outline" size={15} color={remindTime ? ACCENT : SUB} />
-                    <Text style={[styles.chipText, remindTime !== null && styles.chipTextActive]}>
-                      {remindTime ? remindTime : "Set Custom Time"}
-                    </Text>
-                  </Pressable>
-                  {remindTime !== null && (
-                    <Pressable
-                      style={styles.chip}
-                      onPress={() => {
-                        setRemindTime(null);
-                        updateTask(task.id, { remind_time: null });
-                      }}
-                      accessibilityRole="button"
-                    >
-                      <Ionicons name="close-circle" size={15} color={SUB} />
-                      <Text style={styles.chipText}>Clear</Text>
-                    </Pressable>
-                  )}
-                </View>
-              </>
-            )}
 
             {/* Task Dependency System with Searchable Picker */}
             <Text style={styles.label}>Dependencies (Prerequisites)</Text>
@@ -588,6 +694,55 @@ const styles = StyleSheet.create({
   chipText: { color: "#D6D6D6", fontSize: 13, fontWeight: "600" },
   chipTextActive: { color: ACCENT },
   energyDot: { width: 8, height: 8, borderRadius: 4 },
+  scheduleCard: {
+    backgroundColor: FIELD_BG,
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  scheduleRow: {
+    minHeight: 62,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    paddingHorizontal: 12,
+  },
+  scheduleRowPressed: { backgroundColor: "#242424" },
+  scheduleIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: "#252525",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scheduleCopy: { flex: 1 },
+  scheduleTitle: { color: SUB, fontSize: 12, lineHeight: 16, fontWeight: "600" },
+  scheduleValue: { color: "#D6D6D6", fontSize: 15, lineHeight: 20, fontWeight: "600", marginTop: 1 },
+  scheduleValueActive: { color: TEXT },
+  scheduleDivider: { height: StyleSheet.hairlineWidth, backgroundColor: LINE, marginLeft: 59 },
+  datePickerWrap: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+  },
+  quickDateRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  quickDateChip: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: LINE,
+    backgroundColor: FIELD_BG,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickDateChipActive: { borderColor: ACCENT, backgroundColor: "rgba(250,110,30,0.12)" },
+  quickDateText: { color: SUB, fontSize: 12, fontWeight: "700" },
+  quickDateTextActive: { color: ACCENT },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: LINE, marginVertical: 14 },
   actionRow: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 13 },
   actionText: { color: TEXT, fontSize: 16 },
