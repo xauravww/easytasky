@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  Animated,
+  BackHandler,
+  Easing,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -21,19 +30,19 @@ import ArchivedTasksTool from "./src/components/ArchivedTasksTool";
 import UpdateBanner from "./src/components/UpdateBanner";
 import AgentCallHost from "./src/components/AgentCallHost";
 import { useAgentStore } from "./src/store/useAgentStore";
-
+import AppStartupState from "./src/components/AppStartupState";
 
 type TabKey = "tasks" | "chat" | "focus" | "habits" | "extras";
 
 const ACCENT = "#FA6E1E";
 const SUB = "#9C9C9C";
 
-const TABS: { key: TabKey; icon: string; label: string }[] = [
-  { key: "tasks", icon: "checkbox-outline", label: "Tasks" },
-  { key: "chat", icon: "chatbubble-ellipses-outline", label: "Agent" },
-  { key: "focus", icon: "timer-outline", label: "Focus" },
-  { key: "habits", icon: "flame-outline", label: "Habits" },
-  { key: "extras", icon: "grid-outline", label: "Extras" },
+const TABS: { key: TabKey; icon: string; activeIcon: string; label: string }[] = [
+  { key: "tasks", icon: "checkbox-outline", activeIcon: "checkbox", label: "Tasks" },
+  { key: "chat", icon: "chatbubble-ellipses-outline", activeIcon: "chatbubble-ellipses", label: "Agent" },
+  { key: "focus", icon: "timer-outline", activeIcon: "timer", label: "Focus" },
+  { key: "habits", icon: "flame-outline", activeIcon: "flame", label: "Habits" },
+  { key: "extras", icon: "grid-outline", activeIcon: "grid", label: "Extras" },
 ];
 
 export default function App() {
@@ -42,13 +51,37 @@ export default function App() {
   const [tab, setTab] = useState<TabKey>("tasks");
   const [focusImmersive, setFocusImmersive] = useState(false);
   const [fade] = useState(() => new Animated.Value(1));
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
+  const [initAttempt, setInitAttempt] = useState(0);
 
   // Drawer options modal state
   const [activeModal, setActiveModal] = useState<DrawerOptionKey | null>(null);
 
   useEffect(() => {
-    void init().then(() => useAgentStore.getState().hydrate());
-  }, [init]);
+    let active = true;
+    void init()
+      .then(() => useAgentStore.getState().hydrate())
+      .catch((error) => {
+        if (!active) return;
+        setInitError(error instanceof Error ? error.message : "The workspace could not be loaded.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [init, initAttempt]);
+
+  useEffect(() => {
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (active) setReduceMotion(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
 
   // "Start focus" from anywhere (e.g. task detail) → jump to immersive Focus.
   useEffect(
@@ -78,6 +111,10 @@ export default function App() {
     if (next === tab) return;
     setFocusImmersive(false);
     setTab(next);
+    if (reduceMotion) {
+      fade.setValue(1);
+      return;
+    }
     fade.setValue(0);
     Animated.timing(fade, {
       toValue: 1,
@@ -87,15 +124,52 @@ export default function App() {
     }).start();
   };
 
-  if (!ready) {
-    return <View style={{ flex: 1, backgroundColor: "#141414" }} />;
-  }
+  useEffect(() => {
+    if (!ready) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (activeModal) {
+        setActiveModal(null);
+        return true;
+      }
+      if (focusImmersive) {
+        setFocusImmersive(false);
+        return true;
+      }
+      if (tab !== "tasks") {
+        setFocusImmersive(false);
+        setTab("tasks");
+        if (reduceMotion) {
+          fade.setValue(1);
+        } else {
+          fade.setValue(0);
+          Animated.timing(fade, {
+            toValue: 1,
+            duration: 180,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start();
+        }
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [activeModal, fade, focusImmersive, ready, reduceMotion, tab]);
 
   return (
     <SafeAreaProvider>
-      <StatusBar style={focusImmersive ? "light" : "dark"} />
-      <NavigationBar style={focusImmersive ? "dark" : "light"} hidden={focusImmersive} />
-      <View style={[styles.container, focusImmersive && styles.focusShell]}>
+      <StatusBar style="light" animated={!reduceMotion} />
+      <NavigationBar style="dark" hidden={focusImmersive} />
+      {!ready ? (
+        <AppStartupState
+          error={initError}
+          onRetry={() => {
+            setInitError(null);
+            setInitAttempt((attempt) => attempt + 1);
+          }}
+        />
+      ) : (
+        <View style={[styles.container, focusImmersive && styles.focusShell]}>
         {tab === "focus" && focusImmersive ? (
           <Animated.View style={[{ flex: 1 }, { opacity: fade }]}>
             <FocusScreen immersive onMinimize={() => setFocusImmersive(false)} />
@@ -110,20 +184,35 @@ export default function App() {
               {tab === "extras" && <ExtrasScreen />}
             </Animated.View>
             <View style={styles.tabbar}>
-              {TABS.map((t) => (
-                <Pressable key={t.key} style={styles.tab} onPress={() => switchTab(t.key)}>
+              {TABS.map((t) => {
+                const selected = tab === t.key;
+                return (
+                <Pressable
+                  key={t.key}
+                  style={({ pressed }) => [
+                    styles.tab,
+                    selected && styles.tabSelected,
+                    pressed && styles.tabPressed,
+                  ]}
+                  onPress={() => switchTab(t.key)}
+                  accessibilityRole="tab"
+                  accessibilityLabel={t.label}
+                  accessibilityState={{ selected }}
+                >
                   <Ionicons
-                    name={t.icon as never}
-                    size={20}
-                    color={tab === t.key ? ACCENT : SUB}
+                    name={(selected ? t.activeIcon : t.icon) as never}
+                    size={21}
+                    color={selected ? ACCENT : SUB}
                   />
-                  <Text style={[styles.tabLabel, tab === t.key && { color: ACCENT, fontWeight: "700" }]}>{t.label}</Text>
+                  <Text style={[styles.tabLabel, selected && styles.tabLabelSelected]}>{t.label}</Text>
                 </Pressable>
-              ))}
+                );
+              })}
             </View>
 
-            {/* Draggable Sliding Drawer Handle (Item 1) */}
-            <SlidingDrawer onSelectOption={(opt) => setActiveModal(opt)} />
+            {tab === "tasks" ? (
+              <SlidingDrawer onSelectOption={(opt) => setActiveModal(opt)} />
+            ) : null}
 
             {/* In-App Auto-Update Banner */}
             <UpdateBanner />
@@ -148,7 +237,12 @@ export default function App() {
                 <SafeAreaView style={{ flex: 1, backgroundColor: "#141414" }}>
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalHeaderTitle}>Archived Tasks</Text>
-                    <Pressable onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+                    <Pressable
+                      onPress={() => setActiveModal(null)}
+                      style={styles.modalCloseBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close archived tasks"
+                    >
                       <Ionicons name="close" size={20} color="#FFFFFF" />
                     </Pressable>
                   </View>
@@ -161,7 +255,12 @@ export default function App() {
                 <SafeAreaView style={{ flex: 1, backgroundColor: "#141414" }}>
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalHeaderTitle}>Next-Day Notebook</Text>
-                    <Pressable onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+                    <Pressable
+                      onPress={() => setActiveModal(null)}
+                      style={styles.modalCloseBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close next-day notebook"
+                    >
                       <Ionicons name="close" size={20} color="#FFFFFF" />
                     </Pressable>
                   </View>
@@ -174,7 +273,12 @@ export default function App() {
                 <SafeAreaView style={{ flex: 1, backgroundColor: "#141414" }}>
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalHeaderTitle}>Shutdown Ritual</Text>
-                    <Pressable onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+                    <Pressable
+                      onPress={() => setActiveModal(null)}
+                      style={styles.modalCloseBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close shutdown ritual"
+                    >
                       <Ionicons name="close" size={20} color="#FFFFFF" />
                     </Pressable>
                   </View>
@@ -184,8 +288,9 @@ export default function App() {
             )}
           </SafeAreaView>
         )}
-      </View>
-      <AgentCallHost />
+        </View>
+      )}
+      {ready ? <AgentCallHost /> : null}
     </SafeAreaProvider>
   );
 }
@@ -198,11 +303,23 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "#262626",
     backgroundColor: "#0D0D0D",
-    paddingTop: 6,
+    paddingHorizontal: 8,
+    paddingTop: 7,
     paddingBottom: 8,
+    gap: 2,
   },
-  tab: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 48, gap: 2 },
-  tabLabel: { fontSize: 10, color: SUB },
+  tab: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 50,
+    gap: 3,
+    borderRadius: 14,
+  },
+  tabSelected: { backgroundColor: "rgba(250,110,30,0.1)" },
+  tabPressed: { opacity: 0.7, transform: [{ scale: 0.97 }] },
+  tabLabel: { fontSize: 11, lineHeight: 14, color: SUB, fontWeight: "600" },
+  tabLabelSelected: { color: ACCENT, fontWeight: "800" },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -214,9 +331,9 @@ const styles = StyleSheet.create({
   },
   modalHeaderTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "700" },
   modalCloseBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#1E1E1E",
     alignItems: "center",
     justifyContent: "center",

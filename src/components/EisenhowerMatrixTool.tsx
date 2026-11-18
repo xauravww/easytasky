@@ -31,7 +31,10 @@ export default function EisenhowerMatrixTool() {
   const today = dayKey();
   const [editing, setEditing] = useState<Task | null>(null);
 
-  const open = useMemo(() => tasks.filter((t) => t.status !== "done" && t.status !== "habit"), [tasks]);
+  const open = useMemo(
+    () => tasks.filter((t) => t.status !== "done" && t.status !== "habit" && t.status !== "unwanted"),
+    [tasks]
+  );
 
   const markDone = (id: string) => {
     updateTask(id, { status: "done" });

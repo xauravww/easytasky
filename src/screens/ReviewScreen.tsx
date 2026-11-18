@@ -24,7 +24,10 @@ export default function ReviewScreen() {
   const [period, setPeriod] = useState<Period>("week");
 
   // Non-habit tasks
-  const realTasks = useMemo(() => tasks.filter((t) => t.is_habit !== 1), [tasks]);
+  const realTasks = useMemo(
+    () => tasks.filter((t) => t.is_habit !== 1 && t.status !== "unwanted"),
+    [tasks]
+  );
   const doneTasks = useMemo(() => realTasks.filter((t) => t.status === "done"), [realTasks]);
 
   // Overall Task & Focus Completion Stats
@@ -62,12 +65,16 @@ export default function ReviewScreen() {
     else if (period === "quarter") days = 90;
     else if (period === "year") days = 365;
 
-    const cutoffEpoch = now.getTime() - days * 86400000;
-    const cutoffDateStr = dayKey(new Date(cutoffEpoch));
+    const cutoff = new Date(now);
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - (days - 1));
+    const cutoffEpoch = cutoff.getTime();
+    const cutoffDateStr = dayKey(cutoff);
+    const todayDateStr = dayKey(now);
 
     const tasksInWindow = realTasks.filter((t) => {
-      if (t.due_date && t.due_date >= cutoffDateStr) return true;
-      if (t.created_at && t.created_at >= cutoffEpoch) return true;
+      if (t.due_date && t.due_date >= cutoffDateStr && t.due_date <= todayDateStr) return true;
+      if (t.created_at && t.created_at >= cutoffEpoch && t.created_at <= now.getTime()) return true;
       return false;
     });
 
@@ -95,7 +102,8 @@ export default function ReviewScreen() {
     };
   }, [period, realTasks, pomos]);
 
-  // 52-Week Task Activity Heatmap (tasks completed / active per day)
+  // 52-week planning and focus heatmap. Tasks use their due date (or creation
+  // date when undated); focus sessions use their actual completion date.
   const heatmapData = useMemo(() => {
     const now = new Date();
     const totalDays = 52 * 7;
@@ -105,7 +113,7 @@ export default function ReviewScreen() {
     // Map of dayKey -> activity score
     const dayScoreMap = new Map<string, number>();
 
-    for (const t of doneTasks) {
+    for (const t of realTasks) {
       if (t.due_date) {
         dayScoreMap.set(t.due_date, (dayScoreMap.get(t.due_date) || 0) + 1);
       } else if (t.created_at) {
@@ -143,7 +151,12 @@ export default function ReviewScreen() {
     }
     if (currentWeek.length > 0) weeks.push(currentWeek);
     return weeks;
-  }, [doneTasks, pomos]);
+  }, [realTasks, pomos]);
+
+  const heatmapEventCount = useMemo(
+    () => heatmapData.flat().reduce((total, day) => total + day.count, 0),
+    [heatmapData]
+  );
 
   // Productivity Time Distribution (Scheduled Time Blocks by Kind)
   const blockDistribution = useMemo(() => {
@@ -166,6 +179,20 @@ export default function ReviewScreen() {
   return (
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {stats.totalCount === 0 && pomos.length === 0 ? (
+          <View style={styles.emptyReview}>
+            <View style={styles.emptyReviewIcon}>
+              <Ionicons name="analytics-outline" size={24} color={ACCENT} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.emptyReviewTitle}>Your review builds as you work</Text>
+              <Text style={styles.emptyReviewText}>
+                Complete tasks and focus sessions to reveal useful trends here.
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         {/* Top Summary Stats Cards */}
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
@@ -209,7 +236,7 @@ export default function ReviewScreen() {
 
         {/* Task Velocity & Progress Section */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Task Performance & Velocity</Text>
+          <Text style={styles.sectionTitle}>Tasks Created or Due</Text>
 
           {/* Period Filter Tabs */}
           <View style={styles.periodTabsRow}>
@@ -218,6 +245,8 @@ export default function ReviewScreen() {
                 key={p}
                 style={[styles.periodTab, period === p && styles.periodTabActive]}
                 onPress={() => setPeriod(p)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: period === p }}
               >
                 <Text style={[styles.periodTabText, period === p && styles.periodTabTextActive]}>
                   {p[0].toUpperCase() + p.slice(1)}
@@ -233,7 +262,7 @@ export default function ReviewScreen() {
             </View>
             <View style={styles.progressMeta}>
               <Text style={styles.progressMetaText}>
-                {periodStats.done} of {periodStats.total} tasks completed ({periodStats.pct}%)
+                Current completion: {periodStats.done}/{periodStats.total} ({periodStats.pct}%)
               </Text>
               <Text style={[styles.progressMetaText, { color: ACCENT, fontWeight: "700" }]}>
                 {periodStats.focusMin}m focused
@@ -245,12 +274,18 @@ export default function ReviewScreen() {
         {/* 52-Week Annual Productivity Heatmap */}
         <View style={styles.sectionCard}>
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.sectionTitle}>Productivity Heatmap</Text>
+            <Text style={styles.sectionTitle}>Planning & Focus Activity</Text>
             <Text style={styles.headerSubtitle}>52 Weeks</Text>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.heatmapScroll}>
-            <View style={styles.heatmapGrid}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.heatmapScroll}
+            accessible
+            accessibilityLabel={`52 week planning and focus activity, ${heatmapEventCount} total task and focus events`}
+          >
+            <View style={styles.heatmapGrid} importantForAccessibility="no-hide-descendants">
               {heatmapData.map((week, wIdx) => (
                 <View key={wIdx} style={styles.heatmapCol}>
                   {week.map((day) => {
@@ -323,6 +358,26 @@ export default function ReviewScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
   content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 36, gap: 16 },
+  emptyReview: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "rgba(250,110,30,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(250,110,30,0.24)",
+    borderRadius: 16,
+    padding: 14,
+  },
+  emptyReviewIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "rgba(250,110,30,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyReviewTitle: { color: TEXT, fontSize: 14, fontWeight: "700" },
+  emptyReviewText: { color: SUB, fontSize: 13, lineHeight: 18, marginTop: 2 },
 
   statsGrid: {
     flexDirection: "row",

@@ -12,6 +12,7 @@ import TimerSheet from "../components/TimerSheet";
 const BG = "#000000";
 const TICK = "#2C2C2C";
 const ACCENT = "#FA6E1E";
+const ON_ACCENT = "#FFFFFF";
 const DIM = "#9C9C9C";
 
 const TICK_COUNT = 60;
@@ -135,7 +136,7 @@ export default function FocusScreen({
   const totalElapsedTicks = (secondOfMinute / 60) * TICK_COUNT;
 
   const { width: winW } = useWindowDimensions();
-  const size = Math.min(winW - 84, 276);
+  const size = Math.min(winW - 48, 276);
   const c = size / 2;
   const statusLabel =
     mode === "stopwatch"
@@ -154,7 +155,7 @@ export default function FocusScreen({
 
   return (
     <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+      <View style={[styles.header, { paddingTop: immersive ? insets.top + 10 : 10 }]}>
         {immersive ? (
           <Pressable
             style={styles.minimize}
@@ -174,7 +175,8 @@ export default function FocusScreen({
           <Pressable
             style={[styles.keepAwakeBtn, keepAwakeOn && styles.keepAwakeBtnActive]}
             onPress={() => setKeepAwakeOn((v) => !v)}
-            accessibilityRole="button"
+            accessibilityRole="switch"
+            accessibilityState={{ checked: keepAwakeOn }}
             accessibilityLabel={keepAwakeOn ? "Screen stays on (enabled)" : "Screen stays on (disabled)"}
           >
             <Ionicons
@@ -193,13 +195,26 @@ export default function FocusScreen({
         </View>
       </View>
 
-      {selectedTask && (
-        <View style={styles.taskChip}>
-          <Text style={styles.taskChipText} numberOfLines={1} ellipsizeMode="tail">
-            {selectedTask.title}
-          </Text>
-        </View>
-      )}
+      <Pressable
+        style={({ pressed }) => [
+          styles.taskChip,
+          !selectedTask && styles.taskChipEmpty,
+          pressed && styles.controlPressed,
+        ]}
+        onPress={() => setSheet(true)}
+        accessibilityRole="button"
+        accessibilityLabel={selectedTask ? `Focused task: ${selectedTask.title}` : "Choose a focus task"}
+        accessibilityHint="Opens focus settings"
+      >
+        <Ionicons
+          name={selectedTask ? "checkmark-circle-outline" : "add-circle-outline"}
+          size={15}
+          color={selectedTask ? ACCENT : DIM}
+        />
+        <Text style={styles.taskChipText} numberOfLines={1} ellipsizeMode="tail">
+          {selectedTask?.title ?? "Choose a task"}
+        </Text>
+      </Pressable>
 
       {/* Mode switcher — locked while a session is running */}
       <View style={styles.modeRow}>
@@ -209,8 +224,8 @@ export default function FocusScreen({
             style={[styles.modeChip, mode === m && styles.modeChipActive]}
             onPress={() => setMode(m)}
             disabled={running}
-            accessibilityRole="button"
-            accessibilityState={{ selected: mode === m }}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: mode === m, disabled: running }}
             accessibilityLabel={`${m} mode`}
           >
             <Ionicons name={m === "pomodoro" ? "timer-outline" : "stopwatch-outline"} size={15} color={mode === m ? ACCENT : "#8A8A8A"} />
@@ -222,7 +237,13 @@ export default function FocusScreen({
       </View>
 
       <View style={styles.middle}>
-        <Pressable onPress={handleDialTap} style={{ width: size, height: size }} accessibilityRole="button" accessibilityLabel="Timer">
+        <Pressable
+          onPress={handleDialTap}
+          style={{ width: size, height: size }}
+          accessibilityRole="button"
+          accessibilityLabel={`${statusLabel}, ${fmtClock(left)}`}
+          accessibilityHint="Double tap quickly to enter immersive focus"
+        >
           <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
             {TICK_INDICES.map((i) => {
               const passed = totalElapsedTicks > i;
@@ -252,20 +273,36 @@ export default function FocusScreen({
         </Pressable>
 
         <View style={styles.controls}>
-          <Pressable style={styles.sideBtn} onPress={() => setMusicOn((v) => !v)} accessibilityRole="button" accessibilityLabel="Toggle ambient sound">
+          <Pressable
+            style={({ pressed }) => [styles.sideBtn, musicOn && styles.sideBtnActive, pressed && styles.controlPressed]}
+            onPress={() => setMusicOn((v) => !v)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: musicOn }}
+            accessibilityLabel="Ambient sound"
+          >
             <Ionicons name={musicOn ? "musical-notes" : "musical-notes-outline"} size={24} color="#B8B8B8" />
           </Pressable>
 
-          <Pressable style={styles.mainBtn} onPress={running ? pausePomo : startPomo} accessibilityRole="button">
+          <Pressable
+            style={({ pressed }) => [styles.mainBtn, pressed && styles.mainBtnPressed]}
+            onPress={running ? pausePomo : startPomo}
+            accessibilityRole="button"
+            accessibilityLabel={running ? `Pause ${statusLabel.toLowerCase()} timer` : `Start ${statusLabel.toLowerCase()} timer`}
+          >
             <Ionicons
               name={running ? "pause" : "play"}
               size={34}
-              color="#FFFFFF"
+              color={ON_ACCENT}
               style={{ marginLeft: running ? 0 : 4 }}
             />
           </Pressable>
 
-          <Pressable style={styles.sideBtn} onPress={finishPomo} accessibilityRole="button" accessibilityLabel="Stop session">
+          <Pressable
+            style={({ pressed }) => [styles.sideBtn, pressed && styles.controlPressed]}
+            onPress={finishPomo}
+            accessibilityRole="button"
+            accessibilityLabel="Finish and reset session"
+          >
             <Ionicons name="stop" size={26} color="#B8B8B8" />
           </Pressable>
 
@@ -273,8 +310,9 @@ export default function FocusScreen({
           <Pressable
             style={[styles.tickBtn, tickOn && styles.tickBtnActive]}
             onPress={() => setTickOn((v) => !v)}
-            accessibilityRole="button"
-            accessibilityLabel="Toggle tick tick sound"
+            accessibilityRole="switch"
+            accessibilityState={{ checked: tickOn }}
+            accessibilityLabel="Tick sound"
           >
             <Ionicons name="timer" size={14} color={tickOn ? ACCENT : "#666666"} />
             <Text style={[styles.tickBtnText, tickOn && styles.tickBtnTextActive]}>tick</Text>
@@ -335,14 +373,19 @@ const styles = StyleSheet.create({
   taskChip: {
     alignSelf: "center",
     maxWidth: "70%",
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
     backgroundColor: "#171717",
     borderWidth: 1,
     borderColor: "#262626",
     borderRadius: 999,
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 7,
     marginBottom: 8,
   },
+  taskChipEmpty: { borderStyle: "dashed", paddingHorizontal: 16 },
   taskChipText: { color: "#D6D6D6", fontSize: 12, textAlign: "center" },
   modeRow: {
     flexDirection: "row",
@@ -388,6 +431,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  sideBtnActive: { borderColor: "#6D3313", backgroundColor: "rgba(250,110,30,0.1)" },
+  controlPressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   tickBtn: {
     position: "absolute",
     right: -28,
@@ -423,4 +468,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  mainBtnPressed: { opacity: 0.82, transform: [{ scale: 0.96 }] },
 });

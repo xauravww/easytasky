@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Task } from "../db/database";
 import { dayKey } from "../utils/time";
 import { habitBestStreak, habitStreak, useStore } from "../store/useStore";
+import { readableTextOn } from "./ui";
 
 const BG = "#141414";
 const CARD = "#1C1C1C";
@@ -61,6 +62,14 @@ export default function HabitDetailModal({ habit, onClose }: Props) {
     return map;
   }, [checksForHabit]);
 
+  const targetSnapshotMap = useMemo(() => {
+    const map = new Map<string, number | null>();
+    for (const check of checksForHabit) {
+      map.set(check.day, check.target_value ?? null);
+    }
+    return map;
+  }, [checksForHabit]);
+
   const currentStreak = habitStreak(habitChecks, habit.id);
   const bestStreak = habitBestStreak(habitChecks, habit.id);
   const todayValue = checkMap.get(today) || 0;
@@ -103,11 +112,16 @@ export default function HabitDetailModal({ habit, onClose }: Props) {
         if (!isQuantity) {
           intensity = 4;
         } else {
-          const ratio = val / targetNumber;
-          if (ratio >= 1) intensity = 4;
-          else if (ratio >= 0.75) intensity = 3;
-          else if (ratio >= 0.5) intensity = 2;
-          else intensity = 1;
+          const loggedTarget = targetSnapshotMap.get(k);
+          if (loggedTarget == null) {
+            intensity = 4;
+          } else {
+            const ratio = val / loggedTarget;
+            if (ratio >= 1) intensity = 4;
+            else if (ratio >= 0.75) intensity = 3;
+            else if (ratio >= 0.5) intensity = 2;
+            else intensity = 1;
+          }
         }
       }
 
@@ -122,7 +136,7 @@ export default function HabitDetailModal({ habit, onClose }: Props) {
       weeks.push(currentWeek);
     }
     return weeks;
-  }, [checkMap, isQuantity, targetNumber]);
+  }, [checkMap, isQuantity, targetSnapshotMap]);
 
   // Target Progress by Period (Today, Week, Month, Quarter, Year)
   const targetStats = useMemo(() => {
@@ -212,7 +226,7 @@ export default function HabitDetailModal({ habit, onClose }: Props) {
                     value={targetVal}
                     onChangeText={setTargetVal}
                     placeholder="1"
-                    placeholderTextColor="#555555"
+                    placeholderTextColor={SUB}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -222,7 +236,7 @@ export default function HabitDetailModal({ habit, onClose }: Props) {
                     value={customUnit}
                     onChangeText={setCustomUnit}
                     placeholder="e.g. km, glasses, pages"
-                    placeholderTextColor="#555555"
+                    placeholderTextColor={SUB}
                   />
                 </View>
               </View>
@@ -267,12 +281,12 @@ export default function HabitDetailModal({ habit, onClose }: Props) {
                 <Ionicons
                   name={todayValue > 0 ? "checkmark" : "add"}
                   size={20}
-                  color={todayValue > 0 ? "#FFFFFF" : SUB}
+                  color={todayValue > 0 ? readableTextOn(habitColor) : SUB}
                 />
                 <Text
                   style={[
                     styles.checkBtnText,
-                    todayValue > 0 && { color: "#FFFFFF", fontWeight: "700" },
+                    todayValue > 0 && { color: readableTextOn(habitColor), fontWeight: "700" },
                   ]}
                 >
                   {todayValue > 0 ? "Completed" : "Mark Done"}
@@ -470,9 +484,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   saveConfigBtnText: {
-    color: "#FFFFFF",
+    color: "#141414",
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   todayCard: {
     flexDirection: "row",

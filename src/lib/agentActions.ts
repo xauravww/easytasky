@@ -10,7 +10,9 @@ export const buildContext = (): string => {
   const state = useStore.getState();
   const today = dayKey();
   const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
-  const openTasks = state.tasks.filter((t) => t.status !== "done" && t.status !== "habit");
+  const openTasks = state.tasks.filter(
+    (t) => t.status !== "done" && t.status !== "habit" && t.status !== "unwanted"
+  );
   const todayBlocks = state.blocks.filter((b) => b.day === today).sort((a, b) => a.start_min - b.start_min);
   const habits = state.tasks.filter((t) => t.is_habit === 1);
   const sections = state.sections;
@@ -114,7 +116,8 @@ const isDataActionRequest = (history: AgentMessage[]): boolean => {
 };
 
 export const executeProposals = async (
-  proposals: BlockProposal[]
+  proposals: BlockProposal[],
+  shouldContinue: () => boolean = () => true
 ): Promise<ActionExecutionResult> => {
   const applied: string[] = [];
   const failed: ActionExecutionResult["failed"] = [];
@@ -125,6 +128,7 @@ export const executeProposals = async (
   const refresh = () => useStore.getState().refreshAll();
 
   for (const p of proposals) {
+    if (!shouldContinue()) return { applied, failed };
     try {
       const state = useStore.getState();
 
@@ -456,14 +460,20 @@ export const executeProposals = async (
 
 // Runs one turn, verifies every requested mutation, and asks the model to repair
 // bad tool arguments only when the previous attempt changed nothing.
-export const runAgentTurn = async (history: AgentMessage[]): Promise<string> => {
+export const runAgentTurn = async (
+  history: AgentMessage[],
+  shouldContinue: () => boolean = () => true,
+  signal?: AbortSignal
+): Promise<string> => {
   const actionRequested = isDataActionRequest(history);
   let attemptHistory = history;
   let lastFailures = ["No verified change was made."];
   let repairDetails = lastFailures.join(" ");
 
   for (let attempt = 1; attempt <= MAX_ACTION_ATTEMPTS; attempt++) {
-    const reply = await chatWithTools(attemptHistory, buildContext());
+    if (!shouldContinue()) return "";
+    const reply = await chatWithTools(attemptHistory, buildContext(), signal);
+    if (!shouldContinue()) return "";
 
     if (reply.toolCalls?.length) {
       const { proposals, note } = proposalsFromToolCalls(
@@ -471,7 +481,8 @@ export const runAgentTurn = async (history: AgentMessage[]): Promise<string> => 
         useStore.getState().blocks
       );
       if (proposals.length) {
-        const result = await executeProposals(proposals);
+        const result = await executeProposals(proposals, shouldContinue);
+        if (!shouldContinue()) return "";
         if (result.applied.length) {
           // Do not retry a partial batch: repeating successful create actions could duplicate data.
           return formatExecutionResult(result);
@@ -493,6 +504,7 @@ export const runAgentTurn = async (history: AgentMessage[]): Promise<string> => 
     }
 
     if (attempt === MAX_ACTION_ATTEMPTS) break;
+    if (!shouldContinue()) return "";
 
     attemptHistory = [
       ...history,

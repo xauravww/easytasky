@@ -96,6 +96,7 @@ export type HabitCheck = {
   habit_id: string;
   day: string; // YYYY-MM-DD
   value?: number; // logged value for quantity habits (defaults to 1 for boolean)
+  target_value?: number | null; // target in effect when logged; null for legacy history
 };
 
 export type Subtask = {
@@ -134,7 +135,8 @@ let db: SQLiteDatabase | null = null;
 export const getDb = async (): Promise<SQLiteDatabase> => {
   if (db) return db;
   db = await openDatabaseAsync("easytasky.db");
-  await db.execAsync(`
+  try {
+    await db.execAsync(`
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -160,6 +162,8 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       habit_id TEXT NOT NULL,
       day TEXT NOT NULL,
+      value REAL DEFAULT 1,
+      target_value REAL DEFAULT 1,
       UNIQUE(habit_id, day)
     );
     CREATE TABLE IF NOT EXISTS subtasks (
@@ -246,13 +250,28 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
   try {
     await db.execAsync("ALTER TABLE habit_checks ADD COLUMN value REAL DEFAULT 1");
   } catch {}
-  await db.execAsync("CREATE TABLE IF NOT EXISTS habit_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, habit_id TEXT NOT NULL, day TEXT NOT NULL, value REAL DEFAULT 1, UNIQUE(habit_id, day))");
+  try {
+    await db.execAsync("ALTER TABLE habit_checks ADD COLUMN target_value REAL");
+  } catch {}
+  await db.runAsync(
+    `
+      UPDATE habit_checks
+      SET target_value = COALESCE(
+        (SELECT habit_target_value FROM tasks WHERE tasks.id = habit_checks.habit_id),
+        1
+      )
+      WHERE target_value IS NULL AND day = ?
+    `,
+    [dayKey()]
+  );
+  await db.execAsync("CREATE TABLE IF NOT EXISTS habit_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, habit_id TEXT NOT NULL, day TEXT NOT NULL, value REAL DEFAULT 1, target_value REAL DEFAULT 1, UNIQUE(habit_id, day))");
   await db.execAsync("CREATE TABLE IF NOT EXISTS subtasks (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, title TEXT NOT NULL, done INTEGER DEFAULT 0, sort INTEGER DEFAULT 0, created_at INTEGER NOT NULL)");
   await db.execAsync("CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT DEFAULT '#0B6E46', sort INTEGER DEFAULT 0, created_at INTEGER NOT NULL)");
   await db.execAsync("CREATE TABLE IF NOT EXISTS task_dependencies (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, depends_on_task_id TEXT NOT NULL, UNIQUE(task_id, depends_on_task_id))");
   await db.execAsync("CREATE TABLE IF NOT EXISTS daily_notes (id TEXT PRIMARY KEY, day TEXT NOT NULL UNIQUE, content TEXT NOT NULL, updated_at INTEGER NOT NULL)");
   await db.execAsync("CREATE TABLE IF NOT EXISTS shutdown_rituals (id TEXT PRIMARY KEY, title TEXT NOT NULL, sort INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1)");
   await db.execAsync("CREATE TABLE IF NOT EXISTS shutdown_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, ritual_id TEXT NOT NULL, day TEXT NOT NULL, UNIQUE(ritual_id, day))");
+  await db.execAsync("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS task_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -266,8 +285,14 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
   try {
     await db.runAsync("DELETE FROM task_history WHERE updated_at < ?", [sevenDaysAgo]);
   } catch {}
-  await seedIfNeeded(db);
-  return db;
+    await seedIfNeeded(db);
+    return db;
+  } catch (error) {
+    const failedDb = db;
+    db = null;
+    await failedDb.closeAsync().catch(() => {});
+    throw error;
+  }
 };
 
 const seedIfNeeded = async (d: SQLiteDatabase): Promise<void> => {

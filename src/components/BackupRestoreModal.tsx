@@ -38,6 +38,7 @@ const LINE = "#2A2A2A";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
 const ACCENT = "#FA6E1E"; // Product accent
+const ON_ACCENT = "#FFFFFF";
 const GREEN = "#22C55E";
 const RED = "#EF4444";
 
@@ -373,7 +374,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({ visible,
                         onPress={handleBackupGitHub}
                         disabled={actionLoading !== null}
                       >
-                        <Ionicons name="cloud-upload" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Ionicons name="cloud-upload" size={16} color={ON_ACCENT} style={{ marginRight: 6 }} />
                         <Text style={styles.actionBtnText}>
                           {actionLoading === "backup-gh" ? "Pushing…" : "Backup Now"}
                         </Text>
@@ -406,7 +407,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({ visible,
                     <TextInput
                       style={styles.textInput}
                       placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                      placeholderTextColor="#555555"
+                       placeholderTextColor={SUB}
                       value={ghToken}
                       onChangeText={setGhToken}
                       secureTextEntry
@@ -418,7 +419,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({ visible,
                     <TextInput
                       style={styles.textInput}
                       placeholder="easytasky-backup"
-                      placeholderTextColor="#555555"
+                       placeholderTextColor={SUB}
                       value={ghRepo}
                       onChangeText={setGhRepo}
                       autoCapitalize="none"
@@ -478,7 +479,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({ visible,
                         onPress={handleBackupDrive}
                         disabled={actionLoading !== null}
                       >
-                        <Ionicons name="cloud-upload" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Ionicons name="cloud-upload" size={16} color={ON_ACCENT} style={{ marginRight: 6 }} />
                         <Text style={styles.actionBtnText}>
                           {actionLoading === "backup-gd" ? "Saving…" : "Backup Now"}
                         </Text>
@@ -508,14 +509,14 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({ visible,
                 ) : (
                   <View style={styles.formContainer}>
                     <Text style={styles.inputLabel}>OAuth / Service Account Token</Text>
-                    <TextInput
-                      style={[styles.textInput, { height: 74, textAlignVertical: "top" }]}
-                      placeholder="ya29.xxxxxxxxxxxxxxxxxxxx"
-                      placeholderTextColor="#555555"
-                      value={gdToken}
-                      onChangeText={setGdToken}
-                      multiline
-                      autoCapitalize="none"
+                     <TextInput
+                       style={styles.textInput}
+                       placeholder="ya29.xxxxxxxxxxxxxxxxxxxx"
+                       placeholderTextColor={SUB}
+                       value={gdToken}
+                       onChangeText={setGdToken}
+                       secureTextEntry
+                       autoCapitalize="none"
                       autoCorrect={false}
                     />
 
@@ -674,9 +675,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   submitBtnText: {
-    color: "#FFFFFF",
+    color: ON_ACCENT,
     fontSize: 15,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   btnDisabled: {
     opacity: 0.5,
@@ -711,7 +712,7 @@ const styles = StyleSheet.create({
   },
   lastBackupText: {
     fontSize: 12,
-    color: "#666666",
+    color: SUB,
     fontStyle: "italic",
   },
   actionRow: {
@@ -736,9 +737,9 @@ const styles = StyleSheet.create({
     borderColor: LINE,
   },
   actionBtnText: {
-    color: "#FFFFFF",
+    color: ON_ACCENT,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   btnDisconnect: {
     alignSelf: "center",

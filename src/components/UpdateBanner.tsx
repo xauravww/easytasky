@@ -21,6 +21,7 @@ const CARD = "#1C1C1C";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
 const ACCENT = "#FA6E1E";
+const ON_ACCENT = "#FFFFFF";
 
 export default function UpdateBanner() {
   const insets = useSafeAreaInsets();
@@ -109,8 +110,9 @@ export default function UpdateBanner() {
           {!downloading && (
             <Pressable
               onPress={handleDismiss}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.closeBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss update"
             >
               <Ionicons name="close" size={18} color={SUB} />
             </Pressable>
@@ -162,6 +164,7 @@ export default function UpdateBanner() {
                   styles.laterBtn,
                   pressed && { opacity: 0.7 },
                 ]}
+                accessibilityRole="button"
               >
                 <Text style={styles.laterText}>Later</Text>
               </Pressable>
@@ -171,8 +174,10 @@ export default function UpdateBanner() {
                   styles.updateBtn,
                   pressed && { opacity: 0.85 },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Update to version ${update.latestVersion}`}
               >
-                <Ionicons name="arrow-down-outline" size={15} color="#FFFFFF" />
+                <Ionicons name="arrow-down-outline" size={15} color={ON_ACCENT} />
                 <Text style={styles.updateText}>
                   Update to v{update.latestVersion}
                 </Text>
@@ -190,7 +195,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    zIndex: 9999,
+    zIndex: 60,
     paddingHorizontal: 16,
   },
   card: {
@@ -237,7 +242,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   closeBtn: {
-    padding: 4,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
   },
   progressWrap: {
     marginTop: 14,
@@ -307,7 +316,8 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   laterBtn: {
-    paddingVertical: 8,
+    minHeight: 44,
+    justifyContent: "center",
     paddingHorizontal: 16,
     borderRadius: 999,
     backgroundColor: "#262626",
@@ -321,13 +331,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 8,
+    minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: 999,
     backgroundColor: ACCENT,
   },
   updateText: {
-    color: "#FFFFFF",
+    color: ON_ACCENT,
     fontSize: 13,
     fontWeight: "700",
   },

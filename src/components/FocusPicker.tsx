@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from "react";
 import {
+  FlatList,
   Modal,
   Pressable,
-  ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -19,6 +20,8 @@ const CIRCLE = "#6F6F6F";
 const TAB_IDLE = "#9E9E9E";
 const DATE_IDLE = "#9E9E9E";
 const RED = "#EA5A47";
+const ACCENT = "#FA6E1E";
+const ON_ACCENT = "#FFFFFF";
 
 const ENERGY_COLOR: Record<Task["energy"], string> = {
   high: "#E5484D",
@@ -33,6 +36,13 @@ const fmtDue = (key: string): string => {
 };
 
 type Tab = "task" | "habit";
+
+type FocusSection = {
+  title: string;
+  data: Task[];
+  showDue: boolean;
+  collapsible?: boolean;
+};
 
 type Props = {
   visible: boolean;
@@ -53,9 +63,12 @@ export default function FocusPicker({
   const [tab, setTab] = useState<Tab>("task");
   const [query, setQuery] = useState("");
   const [overdueOpen, setOverdueOpen] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(60);
 
-
-  const open = useMemo(() => tasks.filter((t) => t.status !== "done" && t.status !== "habit"), [tasks]);
+  const open = useMemo(
+    () => tasks.filter((t) => t.status !== "done" && t.status !== "habit" && t.status !== "unwanted"),
+    [tasks]
+  );
   const habits = useMemo(() => tasks.filter((t) => t.is_habit === 1), [tasks]);
   const matched = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -72,6 +85,28 @@ export default function FocusPicker({
     return { overdue, todayList, upcoming, noDate };
   }, [matched]);
 
+  const taskSections = useMemo<FocusSection[]>(() => {
+    const source: FocusSection[] = [
+      {
+        title: `OVERDUE${query.trim() ? "" : ` (${groups.overdue.length})`}`,
+        data: overdueOpen ? groups.overdue : [],
+        showDue: true,
+        collapsible: true,
+      },
+      { title: "TODAY", data: groups.todayList, showDue: true },
+      { title: "UPCOMING", data: groups.upcoming, showDue: true },
+      { title: "NO DATE", data: groups.noDate, showDue: false },
+    ];
+    let remaining = visibleCount;
+    return source
+      .map((section) => {
+        const data = section.data.slice(0, Math.max(0, remaining));
+        remaining -= data.length;
+        return { ...section, data };
+      })
+      .filter((section) => section.collapsible ? groups.overdue.length > 0 : section.data.length > 0);
+  }, [groups, overdueOpen, query, visibleCount]);
+
   const pick = (id: string) => {
     onSelect(selectedId === id ? "" : id);
     onClose();
@@ -80,14 +115,20 @@ export default function FocusPicker({
   const renderRow = (t: Task, showDue: boolean) => {
     const selected = selectedId === t.id;
     return (
-      <Pressable style={styles.row} onPress={() => pick(t.id)} accessibilityRole="button">
+      <Pressable
+        style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        onPress={() => pick(t.id)}
+        accessibilityRole="radio"
+        accessibilityState={{ selected }}
+        accessibilityLabel={`${t.title}${t.due_date ? `, due ${fmtDue(t.due_date)}` : ""}`}
+      >
         {t.energy ? (
           <View style={[styles.energyBar, { backgroundColor: ENERGY_COLOR[t.energy] }]} />
         ) : (
           <View style={styles.energySpacer} />
         )}
         <View style={[styles.circle, selected && styles.circleActive]}>
-          {selected && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+          {selected && <Ionicons name="checkmark" size={16} color={ON_ACCENT} />}
         </View>
         <Text style={styles.rowTitle} numberOfLines={1}>
           {t.title}
@@ -107,7 +148,13 @@ export default function FocusPicker({
             <Ionicons name="close" size={26} color="#FFFFFF" />
           </Pressable>
           {(["task", "habit"] as Tab[]).map((t) => (
-            <Pressable key={t} style={styles.tab} onPress={() => setTab(t)} accessibilityRole="tab">
+            <Pressable
+              key={t}
+              style={styles.tab}
+              onPress={() => setTab(t)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab === t }}
+            >
               <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
                 {t === "task" ? "Task" : "Habit"}
               </Text>
@@ -128,48 +175,58 @@ export default function FocusPicker({
         </View>
 
         {tab === "task" ? (
-          <ScrollView contentContainerStyle={styles.list}>
-            {groups.overdue.length > 0 && (
-              <>
-                <Pressable style={styles.sectionHead} onPress={() => setOverdueOpen((v) => !v)} accessibilityRole="button">
-                  <Text style={styles.sectionText}>
-                    OVERDUE{query.trim() ? "" : ` (${groups.overdue.length})`}
-                  </Text>
+          <SectionList
+            sections={taskSections}
+            keyExtractor={(item) => item.id}
+            style={styles.listView}
+            contentContainerStyle={styles.list}
+            stickySectionHeadersEnabled={false}
+            initialNumToRender={16}
+            maxToRenderPerBatch={12}
+            windowSize={7}
+            onEndReachedThreshold={0.35}
+            onEndReached={() => {
+              if (visibleCount < matched.tasks.length) {
+                setVisibleCount((count) => Math.min(count + 60, matched.tasks.length));
+              }
+            }}
+            renderSectionHeader={({ section }) =>
+              section.collapsible ? (
+                <Pressable
+                  style={styles.sectionHead}
+                  onPress={() => setOverdueOpen((value) => !value)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: overdueOpen }}
+                >
+                  <Text style={styles.sectionText}>{section.title}</Text>
                   <Ionicons name={overdueOpen ? "chevron-up" : "chevron-down"} size={18} color={TAB_IDLE} />
                 </Pressable>
-                {overdueOpen && groups.overdue.map((t) => renderRow(t, true))}
-              </>
-            )}
-
-            {groups.todayList.length > 0 && (
-              <>
-                <Text style={styles.sectionText}>TODAY</Text>
-                {groups.todayList.map((t) => renderRow(t, true))}
-              </>
-            )}
-
-            {groups.upcoming.length > 0 && (
-              <>
-                <Text style={styles.sectionText}>UPCOMING</Text>
-                {groups.upcoming.map((t) => renderRow(t, true))}
-              </>
-            )}
-
-            {groups.noDate.length > 0 && (
-              <>
-                <Text style={styles.sectionText}>NO DATE</Text>
-                {groups.noDate.map((t) => renderRow(t, false))}
-              </>
-            )}
-
-            {matched.tasks.length === 0 && <Text style={styles.empty}>No matching tasks</Text>}
-          </ScrollView>
+              ) : (
+                <Text style={styles.sectionText}>{section.title}</Text>
+              )
+            }
+            renderItem={({ item, section }) => renderRow(item, section.showDue)}
+            ListEmptyComponent={<Text style={styles.empty}>No matching tasks</Text>}
+          />
         ) : (
-          <ScrollView contentContainerStyle={styles.list}>
-            <Text style={styles.sectionText}>HABITS</Text>
-            {matched.habits.map((t) => renderRow(t, false))}
-            {matched.habits.length === 0 && <Text style={styles.empty}>No habits yet</Text>}
-          </ScrollView>
+          <FlatList
+            data={matched.habits.slice(0, visibleCount)}
+            keyExtractor={(item) => item.id}
+            style={styles.listView}
+            contentContainerStyle={styles.list}
+            initialNumToRender={16}
+            maxToRenderPerBatch={12}
+            windowSize={7}
+            onEndReachedThreshold={0.35}
+            onEndReached={() => {
+              if (visibleCount < matched.habits.length) {
+                setVisibleCount((count) => Math.min(count + 60, matched.habits.length));
+              }
+            }}
+            ListHeaderComponent={<Text style={styles.sectionText}>HABITS</Text>}
+            renderItem={({ item }) => renderRow(item, false)}
+            ListEmptyComponent={<Text style={styles.empty}>No habits yet</Text>}
+          />
         )}
       </View>
     </Modal>
@@ -179,11 +236,11 @@ export default function FocusPicker({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, gap: 16 },
-  close: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  tab: { alignItems: "center", marginRight: 6 },
+  close: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  tab: { minHeight: 44, alignItems: "center", justifyContent: "center", marginRight: 6 },
   tabText: { color: TAB_IDLE, fontSize: 17, fontWeight: "600" },
-  tabTextActive: { color: "#FA6E1E", fontWeight: "700" },
-  tabUnderline: { height: 3, borderRadius: 2, backgroundColor: "#FA6E1E", alignSelf: "stretch", marginTop: 5 },
+  tabTextActive: { color: ACCENT, fontWeight: "700" },
+  tabUnderline: { height: 3, borderRadius: 2, backgroundColor: ACCENT, alignSelf: "stretch", marginTop: 5 },
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -196,7 +253,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   searchInput: { flex: 1, color: "#FFFFFF", fontSize: 15 },
-  list: { paddingHorizontal: 8, paddingTop: 4 },
+  listView: { flex: 1 },
+  list: { flexGrow: 1, paddingHorizontal: 8, paddingTop: 4, paddingBottom: 20 },
   sectionHead: {
     flexDirection: "row",
     alignItems: "center",
@@ -206,6 +264,7 @@ const styles = StyleSheet.create({
   },
   sectionText: { color: "#B3B3B3", fontSize: 12, fontWeight: "700", letterSpacing: 0.5, paddingHorizontal: 12, paddingVertical: 8 },
   row: { flexDirection: "row", alignItems: "center", minHeight: 52, gap: 12 },
+  rowPressed: { opacity: 0.72 },
   energyBar: { width: 3, height: 30, borderRadius: 2 },
   energySpacer: { width: 3, height: 30 },
   circle: {
@@ -217,7 +276,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  circleActive: { borderColor: "#FA6E1E", backgroundColor: "#FA6E1E" },
+  circleActive: { borderColor: ACCENT, backgroundColor: ACCENT },
   rowTitle: { flex: 1, color: "#FFFFFF", fontSize: 16 },
   due: { color: DATE_IDLE, fontSize: 13 },
   empty: { color: TAB_IDLE, fontSize: 14, textAlign: "center", paddingVertical: 20 },

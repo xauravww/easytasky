@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import ReviewScreen from "./ReviewScreen";
 import TimeboxTool from "../components/TimeboxTool";
@@ -81,6 +81,15 @@ export default function ExtrasScreen() {
 
   const active = tools.find((t) => t.id === tool);
 
+  useEffect(() => {
+    if (!tool) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      setTool(null);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [tool]);
+
   return (
     <View style={styles.root}>
       {active ? (
@@ -105,6 +114,7 @@ export default function ExtrasScreen() {
                 style={({ pressed }) => [styles.card, pressed && { opacity: 0.7 }]}
                 onPress={() => setTool(t.id)}
                 accessibilityRole="button"
+                accessibilityLabel={`${t.title}. ${t.desc}`}
               >
                 <View style={styles.cardIcon}>
                   <Ionicons name={t.icon as never} size={24} color={ACCENT} />

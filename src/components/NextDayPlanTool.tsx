@@ -19,6 +19,7 @@ const LINE = "#262626";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
 const ACCENT = "#FA6E1E";
+const ON_ACCENT = "#FFFFFF";
 
 const fmtDateDisplay = (key: string) => {
   const d = new Date(key + "T00:00:00");
@@ -78,7 +79,9 @@ export default function NextDayPlanTool() {
     setTimeout(() => setSavedStatus(""), 3000);
   };
 
-  const plannedTasks = tasks.filter((t) => t.due_date === currentKey && t.status !== "done");
+  const plannedTasks = tasks.filter(
+    (t) => t.due_date === currentKey && t.status !== "done" && t.status !== "unwanted"
+  );
 
   return (
     <KeyboardAvoidingView
@@ -143,7 +146,7 @@ export default function NextDayPlanTool() {
 - Morning deep work on client proposal
 - Need 30 min to review emails
 - Evening gym session"
-            placeholderTextColor="#555555"
+            placeholderTextColor={SUB}
             textAlignVertical="top"
           />
         </View>
@@ -163,12 +166,12 @@ export default function NextDayPlanTool() {
               value={taskInput}
               onChangeText={setTaskInput}
               placeholder="Add specific task..."
-              placeholderTextColor="#666666"
+              placeholderTextColor={SUB}
               onSubmitEditing={handleAddTask}
               returnKeyType="done"
             />
             <Pressable style={styles.addBtn} onPress={handleAddTask}>
-              <Ionicons name="add" size={20} color="#FFFFFF" />
+              <Ionicons name="add" size={20} color={ON_ACCENT} />
             </Pressable>
           </View>
 

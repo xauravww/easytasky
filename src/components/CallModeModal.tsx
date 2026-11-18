@@ -29,6 +29,7 @@ type Props = {
   onRecordTurn?: (role: "user" | "assistant", content: string) => void;
   onRefreshHistory?: () => Promise<void> | void;
   onDeleteHistory?: (id: string) => Promise<void> | void;
+  historyDisabled?: boolean;
   onPhaseChange?: (phase: CallPhase) => void;
   elapsedSeconds?: number;
 };
@@ -55,6 +56,7 @@ const CallModeModal = React.forwardRef<CallModeModalHandle, Props>(function Call
   onRecordTurn,
   onRefreshHistory,
   onDeleteHistory,
+  historyDisabled = false,
   onPhaseChange,
   elapsedSeconds = 0,
 }, ref) {
@@ -300,6 +302,7 @@ const CallModeModal = React.forwardRef<CallModeModalHandle, Props>(function Call
           onClose={() => setHistoryOpen(false)}
           onRefresh={onRefreshHistory}
           onDelete={onDeleteHistory}
+          disabled={historyDisabled}
         />
       ) : (
         <View

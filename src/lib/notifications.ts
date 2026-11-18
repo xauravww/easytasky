@@ -16,7 +16,21 @@ const FOCUS_CHANNEL = "focus_channel";
 const ACCENT = "#FA6E1E";
 let permAsked = false;
 const ids = new Map<string, string>();
-let focusNotificationId: string | null = null;
+const focusNotificationIds = new Set<string>();
+let focusNotificationGeneration = 0;
+
+const cancelTrackedFocusNotifications = async (): Promise<void> => {
+  let firstError: unknown;
+  for (const id of [...focusNotificationIds]) {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(id);
+      focusNotificationIds.delete(id);
+    } catch (error) {
+      firstError ??= error;
+    }
+  }
+  if (firstError) throw firstError;
+};
 
 const ensurePermission = async () => {
   if (permAsked) return;
@@ -39,11 +53,14 @@ export const scheduleFocusCompletionNotification = async (
   body: string,
   secondsFromNow: number
 ): Promise<void> => {
+  const generation = ++focusNotificationGeneration;
   try {
     await ensurePermission();
-    await cancelFocusNotification();
+    if (generation !== focusNotificationGeneration) return;
+    await cancelTrackedFocusNotifications();
+    if (generation !== focusNotificationGeneration) return;
     if (secondsFromNow <= 0) return;
-    focusNotificationId = await Notifications.scheduleNotificationAsync({
+    const scheduledId = await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
@@ -56,17 +73,25 @@ export const scheduleFocusCompletionNotification = async (
         channelId: FOCUS_CHANNEL,
       },
     });
+    focusNotificationIds.add(scheduledId);
+    if (generation !== focusNotificationGeneration) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(scheduledId);
+        focusNotificationIds.delete(scheduledId);
+      } catch (error) {
+        console.warn("cancel stale focus notification failed", error);
+      }
+      return;
+    }
   } catch (err) {
     console.warn("scheduleFocusCompletionNotification failed", err);
   }
 };
 
 export const cancelFocusNotification = async (): Promise<void> => {
+  focusNotificationGeneration += 1;
   try {
-    if (focusNotificationId) {
-      await Notifications.cancelScheduledNotificationAsync(focusNotificationId);
-      focusNotificationId = null;
-    }
+    await cancelTrackedFocusNotifications();
   } catch {}
 };
 
@@ -97,7 +122,7 @@ export const syncTaskReminders = async (tasks: Task[]): Promise<void> => {
     }
     ids.clear();
     for (const t of tasks) {
-      if (t.status === "done" || t.is_habit === 1 || !t.due_date) continue;
+      if (t.status === "done" || t.status === "unwanted" || t.is_habit === 1 || !t.due_date) continue;
       const at = reminderDate(t.due_date, t.remind_time);
       if (!at) continue;
       const identifier = await Notifications.scheduleNotificationAsync({

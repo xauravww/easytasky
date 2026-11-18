@@ -94,7 +94,7 @@ export default function TimerSheet({ visible, onClose }: Props) {
       <FocusPicker
         visible={picker}
         onClose={() => setPicker(false)}
-        tasks={tasks.filter((t) => t.status !== "done")}
+        tasks={tasks.filter((t) => t.status !== "done" && t.status !== "unwanted")}
         selectedId={pomo.taskId}
         onSelect={setTaskId}
       />

@@ -33,6 +33,7 @@ export default function AgentCallHost() {
   const callMinimized = useAgentStore((s) => s.callMinimized);
   const callStartedAt = useAgentStore((s) => s.callStartedAt);
   const sessions = useAgentStore((s) => s.sessions);
+  const busy = useAgentStore((s) => s.busy);
   const send = useAgentStore((s) => s.send);
   const endCall = useAgentStore((s) => s.endCall);
   const minimizeCall = useAgentStore((s) => s.minimizeCall);
@@ -139,6 +140,7 @@ export default function AgentCallHost() {
           onRecordTurn={recordCallTurn}
           onRefreshHistory={refreshHistory}
           onDeleteHistory={deleteSession}
+          historyDisabled={busy}
         />
       ) : null}
     </View>

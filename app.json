@@ -5,7 +5,8 @@
     "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#141414",
     "ios": {
       "supportsTablet": true
     },
@@ -22,14 +23,22 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "splash": {
-      "image": "./assets/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#141414"
-    },
     "plugins": [
       "expo-sqlite",
       "expo-audio",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#141414",
+          "dark": {
+            "image": "./assets/icon.png",
+            "backgroundColor": "#141414"
+          }
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -44,7 +53,9 @@
           "speechRecognitionPermission": "Allow EasyTasky to recognize your speech."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "expo-font",
+      "expo-asset"
     ]
   }
 }

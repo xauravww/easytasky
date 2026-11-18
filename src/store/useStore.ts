@@ -256,7 +256,8 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ pomo: { ...p, running: false, remainMs, endAt: null } });
   },
 
-  resetPomo: () =>
+  resetPomo: () => {
+    void cancelFocusNotification();
     set((state) => {
       const f = state.pomo.focusMin;
       const stopwatch = state.pomo.mode === "stopwatch";
@@ -275,7 +276,8 @@ export const useStore = create<StoreState>((set, get) => ({
           completing: false,
         },
       };
-    }),
+    });
+  },
 
   finishPomo: async () => {
     const p = get().pomo;
@@ -313,12 +315,12 @@ export const useStore = create<StoreState>((set, get) => ({
         next.phase = "break";
         next.left = next.breakMin * 60;
         next.totalSec = next.breakMin * 60;
-        next.remainMs = next.breakMin * 1000;
+        next.remainMs = next.breakMin * 60 * 1000;
       } else {
         next.phase = "focus";
         next.left = next.focusMin * 60;
         next.totalSec = next.focusMin * 60;
-        next.remainMs = next.focusMin * 1000;
+        next.remainMs = next.focusMin * 60 * 1000;
       }
       next.endAt = Date.now() + next.remainMs;
       const taskTitle = get().tasks.find((t) => t.id === next.taskId)?.title;
@@ -343,10 +345,20 @@ export const useStore = create<StoreState>((set, get) => ({
     const data = await loadAll(db);
     await loadAiConfig();
     await loadHeyGenKey();
-    let profile = "";
-    try {
-      profile = (await AsyncStorage.getItem("@easytasky/profile")) ?? "";
-    } catch {}
+    const storedProfile = await db.getFirstAsync<{ value: string }>(
+      "SELECT value FROM app_settings WHERE key = 'profile'"
+    );
+    let profile = storedProfile?.value ?? "";
+    if (!storedProfile) {
+      try {
+        profile = (await AsyncStorage.getItem("@easytasky/profile")) ?? "";
+      } catch {}
+      await db.runAsync(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('profile', ?)",
+        [profile]
+      );
+      void AsyncStorage.removeItem("@easytasky/profile").catch(() => {});
+    }
     set({ ...data, ready: true, profile });
     void syncTaskReminders(get().tasks);
   },
@@ -359,7 +371,11 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setProfile: async (text) => {
-    await AsyncStorage.setItem("@easytasky/profile", text);
+    const db = await getDb();
+    await db.runAsync(
+      "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('profile', ?)",
+      [text]
+    );
     set({ profile: text });
   },
 
@@ -370,7 +386,11 @@ export const useStore = create<StoreState>((set, get) => ({
       await db.runAsync("DELETE FROM habit_checks WHERE habit_id = ? AND day = ?", [habitId, day]);
       set({ habitChecks: get().habitChecks.filter((c) => !(c.habit_id === habitId && c.day === day)) });
     } else {
-      await db.runAsync("INSERT OR REPLACE INTO habit_checks (habit_id, day, value) VALUES (?,?,?)", [habitId, day, value]);
+      const targetValue = get().tasks.find((t) => t.id === habitId)?.habit_target_value ?? 1;
+      await db.runAsync(
+        "INSERT OR REPLACE INTO habit_checks (habit_id, day, value, target_value) VALUES (?,?,?,?)",
+        [habitId, day, value, targetValue]
+      );
       const checks = await db.getAllAsync<HabitCheck>("SELECT * FROM habit_checks ORDER BY day");
       set({ habitChecks: mapRows(checks) });
       void playCompletionSound();
@@ -383,7 +403,11 @@ export const useStore = create<StoreState>((set, get) => ({
       await db.runAsync("DELETE FROM habit_checks WHERE habit_id = ? AND day = ?", [habitId, day]);
       set({ habitChecks: get().habitChecks.filter((c) => !(c.habit_id === habitId && c.day === day)) });
     } else {
-      await db.runAsync("INSERT OR REPLACE INTO habit_checks (habit_id, day, value) VALUES (?,?,?)", [habitId, day, value]);
+      const targetValue = get().tasks.find((t) => t.id === habitId)?.habit_target_value ?? 1;
+      await db.runAsync(
+        "INSERT OR REPLACE INTO habit_checks (habit_id, day, value, target_value) VALUES (?,?,?,?)",
+        [habitId, day, value, targetValue]
+      );
       const checks = await db.getAllAsync<HabitCheck>("SELECT * FROM habit_checks ORDER BY day");
       set({ habitChecks: mapRows(checks) });
       void playCompletionSound();
@@ -443,11 +467,30 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch {}
 
     const next = { ...cur, ...patch };
-    await db.runAsync(
-      `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, remind_time=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=?, section_id=?, habit_type=?, habit_target_value=?, habit_unit=? WHERE id=?`,
-      [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.repeat_rule ?? null, next.remind_time ?? null, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, next.section_id ?? null, next.habit_type ?? "boolean", next.habit_target_value ?? 1, next.habit_unit ?? null, id]
-    );
-    set({ tasks: get().tasks.map((t) => (t.id === id ? next : t)) });
+    const updatingHabitTarget = cur.is_habit === 1 && patch.habit_target_value !== undefined;
+    const targetValue = next.habit_target_value ?? 1;
+    await db.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.runAsync(
+        `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, remind_time=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=?, section_id=?, habit_type=?, habit_target_value=?, habit_unit=? WHERE id=?`,
+        [next.title, next.context, next.energy, next.quadrant, next.status, next.delegate_note, next.due_date, next.estimated_min, next.actual_min, next.timebox_end, next.note, next.repeat_rule ?? null, next.remind_time ?? null, next.is_habit ?? 0, next.habit_freq, next.habit_days, next.habit_color, next.section_id ?? null, next.habit_type ?? "boolean", targetValue, next.habit_unit ?? null, id]
+      );
+      if (updatingHabitTarget) {
+        await transaction.runAsync(
+          "UPDATE habit_checks SET target_value = ? WHERE habit_id = ? AND day = ?",
+          [targetValue, id, dayKey()]
+        );
+      }
+    });
+    let habitChecks = get().habitChecks;
+    if (updatingHabitTarget) {
+      const today = dayKey();
+      habitChecks = habitChecks.map((check) =>
+        check.habit_id === id && check.day === today
+          ? { ...check, target_value: targetValue }
+          : check
+      );
+    }
+    set({ tasks: get().tasks.map((t) => (t.id === id ? next : t)), habitChecks });
     void syncTaskReminders(get().tasks);
     if (next.status === "done" && cur.status !== "done") {
       void playCompletionSound();
@@ -673,7 +716,9 @@ export const useStore = create<StoreState>((set, get) => ({
     const { tasks, dependencies } = get();
     const blockerDepIds = dependencies.filter((d) => d.task_id === taskId).map((d) => d.depends_on_task_id);
     if (blockerDepIds.length === 0) return { allowed: true, blockingTasks: [] };
-    const blockingTasks = tasks.filter((t) => blockerDepIds.includes(t.id) && t.status !== "done");
+    const blockingTasks = tasks.filter(
+      (t) => blockerDepIds.includes(t.id) && t.status !== "done" && t.status !== "unwanted"
+    );
     return {
       allowed: blockingTasks.length === 0,
       blockingTasks,
@@ -768,7 +813,7 @@ export const useStore = create<StoreState>((set, get) => ({
   exportDataJson: async () => {
     const state = get();
     const dump = {
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       tasks: state.tasks,
       logs: state.logs,
@@ -792,9 +837,15 @@ export const useStore = create<StoreState>((set, get) => ({
       if (!data || typeof data !== "object") {
         return { success: false, error: "Invalid backup JSON format." };
       }
+      if (!Array.isArray(data.tasks)) {
+        return { success: false, error: "This backup is missing its task data." };
+      }
       const db = await getDb();
-      // Clear and re-populate
-      await db.execAsync(`
+      const restoredProfile = typeof data.profile === "string" ? data.profile : get().profile;
+      const restoration: { data: Awaited<ReturnType<typeof loadAll>> | null } = { data: null };
+      await db.withExclusiveTransactionAsync(async (transaction) => {
+        // Clear and re-populate atomically so a bad row cannot destroy the current data.
+        await transaction.execAsync(`
         DELETE FROM tasks;
         DELETE FROM habit_checks;
         DELETE FROM subtasks;
@@ -806,32 +857,72 @@ export const useStore = create<StoreState>((set, get) => ({
         DELETE FROM daily_notes;
         DELETE FROM shutdown_rituals;
         DELETE FROM shutdown_checks;
+        DELETE FROM app_settings WHERE key = 'profile';
       `);
+      await transaction.runAsync(
+        "INSERT INTO app_settings (key, value) VALUES ('profile', ?)",
+        [restoredProfile]
+      );
 
       if (Array.isArray(data.tasks)) {
         for (const t of data.tasks) {
-          await db.runAsync(
-            `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,remind_time,is_habit,habit_freq,habit_days,habit_color,section_id)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-            [t.id, t.title, t.context ?? "", t.energy ?? "medium", t.quadrant ?? null, t.status ?? "inbox", t.delegate_note ?? null, t.created_at ?? Date.now(), t.due_date ?? null, t.estimated_min ?? null, t.actual_min ?? null, t.timebox_end ?? null, t.note ?? null, t.repeat_rule ?? null, t.remind_time ?? null, t.is_habit ?? 0, t.habit_freq ?? null, t.habit_days ?? null, t.habit_color ?? null, t.section_id ?? null]
+          await transaction.runAsync(
+            `INSERT INTO tasks (id,title,context,energy,quadrant,status,delegate_note,created_at,due_date,estimated_min,actual_min,timebox_end,note,repeat_rule,remind_time,is_habit,habit_freq,habit_days,habit_color,section_id,habit_type,habit_target_value,habit_unit)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            [t.id, t.title, t.context ?? "", t.energy ?? "medium", t.quadrant ?? null, t.status ?? "inbox", t.delegate_note ?? null, t.created_at ?? Date.now(), t.due_date ?? null, t.estimated_min ?? null, t.actual_min ?? null, t.timebox_end ?? null, t.note ?? null, t.repeat_rule ?? null, t.remind_time ?? null, t.is_habit ?? 0, t.habit_freq ?? null, t.habit_days ?? null, t.habit_color ?? null, t.section_id ?? null, t.habit_type ?? "boolean", t.habit_target_value ?? 1, t.habit_unit ?? null]
           );
         }
       }
       if (Array.isArray(data.subtasks)) {
         for (const s of data.subtasks) {
-          await db.runAsync("INSERT INTO subtasks (id,task_id,title,done,sort,created_at) VALUES (?,?,?,?,?,?)", [
+          await transaction.runAsync("INSERT INTO subtasks (id,task_id,title,done,sort,created_at) VALUES (?,?,?,?,?,?)", [
             s.id, s.task_id, s.title, s.done ?? 0, s.sort ?? 0, s.created_at ?? Date.now()
           ]);
         }
       }
       if (Array.isArray(data.habitChecks)) {
         for (const h of data.habitChecks) {
-          await db.runAsync("INSERT OR IGNORE INTO habit_checks (habit_id, day) VALUES (?,?)", [h.habit_id, h.day]);
+          const targetValue =
+            h.target_value != null
+              ? h.target_value
+              : h.day === dayKey()
+                ? data.tasks.find((task: Task) => task.id === h.habit_id)?.habit_target_value ?? 1
+                : null;
+          await transaction.runAsync(
+            "INSERT OR IGNORE INTO habit_checks (habit_id, day, value, target_value) VALUES (?,?,?,?)",
+            [h.habit_id, h.day, h.value ?? 1, targetValue]
+          );
+        }
+      }
+      if (Array.isArray(data.logs)) {
+        for (const log of data.logs) {
+          await transaction.runAsync(
+            "INSERT INTO activity_log (id, task_id, action, at, minutes) VALUES (?, ?, ?, ?, ?)",
+            [log.id ?? null, log.task_id ?? null, log.action, log.at ?? Date.now(), log.minutes ?? 0]
+          );
+        }
+      }
+      if (Array.isArray(data.pomos)) {
+        for (const pomo of data.pomos) {
+          await transaction.runAsync(
+            "INSERT INTO pomodoro_sessions (id, task_id, focus_min, break_min, focus_sec, break_sec, rounds, started_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+              pomo.id ?? null,
+              pomo.task_id ?? null,
+              pomo.focus_min ?? 25,
+              pomo.break_min ?? 5,
+              pomo.focus_sec ?? (pomo.focus_min ?? 0) * 60,
+              pomo.break_sec ?? (pomo.break_min ?? 0) * 60,
+              pomo.rounds ?? 1,
+              pomo.started_at ?? Date.now(),
+              pomo.completed_at ?? null,
+            ]
+          );
         }
       }
       if (Array.isArray(data.blocks)) {
         for (const b of data.blocks) {
-          await db.runAsync(
+          await transaction.runAsync(
             "INSERT INTO time_blocks (day,start_min,end_min,label,type,buffer) VALUES (?,?,?,?,?,?)",
             [b.day, b.start_min, b.end_min, b.label, b.type, b.buffer ?? 0]
           );
@@ -839,41 +930,46 @@ export const useStore = create<StoreState>((set, get) => ({
       }
       if (Array.isArray(data.sections)) {
         for (const sec of data.sections) {
-          await db.runAsync("INSERT INTO sections (id, name, color, sort, created_at) VALUES (?, ?, ?, ?, ?)", [
+          await transaction.runAsync("INSERT INTO sections (id, name, color, sort, created_at) VALUES (?, ?, ?, ?, ?)", [
             sec.id, sec.name, sec.color ?? "#0B6E46", sec.sort ?? 0, sec.created_at ?? Date.now()
           ]);
         }
       }
       if (Array.isArray(data.dependencies)) {
         for (const dep of data.dependencies) {
-          await db.runAsync("INSERT OR IGNORE INTO task_dependencies (id, task_id, depends_on_task_id) VALUES (?, ?, ?)", [
+          await transaction.runAsync("INSERT OR IGNORE INTO task_dependencies (id, task_id, depends_on_task_id) VALUES (?, ?, ?)", [
             dep.id ?? uid(), dep.task_id, dep.depends_on_task_id
           ]);
         }
       }
       if (Array.isArray(data.dailyNotes)) {
         for (const dn of data.dailyNotes) {
-          await db.runAsync("INSERT INTO daily_notes (id, day, content, updated_at) VALUES (?, ?, ?, ?)", [
+          await transaction.runAsync("INSERT INTO daily_notes (id, day, content, updated_at) VALUES (?, ?, ?, ?)", [
             dn.id ?? uid(), dn.day, dn.content, dn.updated_at ?? Date.now()
           ]);
         }
       }
       if (Array.isArray(data.shutdownRituals)) {
         for (const sr of data.shutdownRituals) {
-          await db.runAsync("INSERT INTO shutdown_rituals (id, title, sort, enabled) VALUES (?, ?, ?, ?)", [
+          await transaction.runAsync("INSERT INTO shutdown_rituals (id, title, sort, enabled) VALUES (?, ?, ?, ?)", [
             sr.id, sr.title, sr.sort ?? 0, sr.enabled ?? 1
           ]);
         }
       }
       if (Array.isArray(data.shutdownChecks)) {
         for (const sc of data.shutdownChecks) {
-          await db.runAsync("INSERT OR IGNORE INTO shutdown_checks (ritual_id, day) VALUES (?, ?)", [
+          await transaction.runAsync("INSERT OR IGNORE INTO shutdown_checks (ritual_id, day) VALUES (?, ?)", [
             sc.ritual_id, sc.day
           ]);
         }
       }
+          restoration.data = await loadAll(transaction);
+        });
 
-      await get().init();
+      const restoredData = restoration.data;
+      if (!restoredData) throw new Error("The restored data could not be reloaded.");
+      set({ ...restoredData, ready: true, profile: restoredProfile });
+      void syncTaskReminders(restoredData.tasks);
       return { success: true };
     } catch (e) {
       return { success: false, error: (e as Error).message };
@@ -917,7 +1013,13 @@ export const estimateForTitle = (tasks: Task[], title: string): number | null =>
 
 // Current streak and best (longest) streak for a habit.
 export const habitStreak = (checks: HabitCheck[], habitId: string): number => {
-  const days = new Set(checks.filter((c) => c.habit_id === habitId).map((c) => c.day));
+  const days = new Set(
+    checks
+      .filter(
+        (c) => c.habit_id === habitId && (c.value ?? 1) >= (c.target_value ?? 1)
+      )
+      .map((c) => c.day)
+  );
   const cur = new Date();
   if (!days.has(dayKey(cur))) {
     cur.setDate(cur.getDate() - 1);
@@ -933,7 +1035,15 @@ export const habitStreak = (checks: HabitCheck[], habitId: string): number => {
 
 // Best (all-time longest) streak for a habit.
 export const habitBestStreak = (checks: HabitCheck[], habitId: string): number => {
-  const sortedDays = Array.from(new Set(checks.filter((c) => c.habit_id === habitId).map((c) => c.day))).sort();
+  const sortedDays = Array.from(
+    new Set(
+      checks
+        .filter(
+          (c) => c.habit_id === habitId && (c.value ?? 1) >= (c.target_value ?? 1)
+        )
+        .map((c) => c.day)
+    )
+  ).sort();
   if (sortedDays.length === 0) return 0;
   let best = 1;
   let current = 1;

@@ -623,7 +623,8 @@ const TOOLS = [
 // a list of requested tool calls. Falls back to text-only if the endpoint rejects tools.
 export const chatWithTools = async (
   history: { role: "user" | "assistant"; content: string }[],
-  context = ""
+  context = "",
+  signal?: AbortSignal
 ): Promise<{ text?: string; toolCalls?: ToolCall[] }> => {
   if (!aiEnabled()) throw new Error("AI is not configured");
   const url = `${CONFIG.baseURL.replace(/\/+$/, "")}/chat/completions`;
@@ -659,7 +660,7 @@ export const chatWithTools = async (
       body.tools = TOOLS;
       body.tool_choice = "auto";
     }
-    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal });
     if (!res.ok) {
       const b = await res.text().catch(() => "");
       throw new Error(`AI request failed (${res.status}): ${b}`);
@@ -670,7 +671,8 @@ export const chatWithTools = async (
   let data;
   try {
     data = await call(true);
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) throw error;
     // If the endpoint doesn't support tools, retry without them.
     data = await call(false);
   }

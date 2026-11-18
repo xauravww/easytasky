@@ -71,6 +71,9 @@ type AgentState = {
 };
 
 export const useAgentStore = create<AgentState>((set, get) => {
+  let turnGeneration = 0;
+  let activeTurnController: AbortController | null = null;
+
   // Chat history is stored as a session so it shows up in the same list as calls.
   const ensureChatSession = async (firstUser: string | null): Promise<string | null> => {
     const existing = get().chatSessionId;
@@ -159,39 +162,52 @@ export const useAgentStore = create<AgentState>((set, get) => {
     send: async (text, base) => {
       const trimmed = text.trim();
       if (!trimmed || get().busy) return "";
+      const generation = ++turnGeneration;
+      const controller = new AbortController();
+      activeTurnController = controller;
 
       const current = base ?? get().messages;
       const next: AgentMessage[] = [...current, { role: "user", content: trimmed }];
       set({ messages: next, busy: true, typing: true });
 
       await ensureChatSession(firstUserText(base ?? []) ?? trimmed);
+      if (generation !== turnGeneration) return "";
       if (base) resetChatEntries(base);
       appendChatTurn("user", trimmed);
 
       if (base) await replaceChatHistory(base);
-      void appendChatMessage("user", trimmed);
+      await appendChatMessage("user", trimmed);
+      if (generation !== turnGeneration) return "";
 
-      const finish = (content: string) => {
+      const finish = async (content: string) => {
+        if (generation !== turnGeneration) return content;
         set((s) => ({ messages: [...s.messages, { role: "assistant", content }] }));
         appendChatTurn("assistant", content);
-        void appendChatMessage("assistant", content);
+        await appendChatMessage("assistant", content);
         return content;
       };
 
       if (!aiEnabled()) {
         const content = "⚠️ AI not configured. Tap the gear to add your API settings.";
-        const result = finish(content);
-        set({ busy: false, typing: false });
+        const result = await finish(content);
+        if (activeTurnController === controller) activeTurnController = null;
+        if (generation === turnGeneration) set({ busy: false, typing: false });
         return result;
       }
 
       try {
-        const content = await runAgentTurn(next);
-        return finish(content);
+        const content = await runAgentTurn(
+          next,
+          () => generation === turnGeneration,
+          controller.signal
+        );
+        return await finish(content);
       } catch (e) {
-        return finish(`⚠️ ${e instanceof Error ? e.message : "Request failed"}`);
+        if (controller.signal.aborted) return "";
+        return await finish(`⚠️ ${e instanceof Error ? e.message : "Request failed"}`);
       } finally {
-        set({ busy: false, typing: false });
+        if (activeTurnController === controller) activeTurnController = null;
+        if (generation === turnGeneration) set({ busy: false, typing: false });
         void pruneAgentHistory();
       }
     },
@@ -223,6 +239,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
     },
 
     clearChat: async () => {
+      if (get().busy) return;
+      turnGeneration += 1;
+      activeTurnController?.abort();
+      activeTurnController = null;
       const { chatSessionId, chatEntries, chatTitle } = get();
       if (chatSessionId) {
         if (chatEntries.length) {
@@ -303,14 +323,33 @@ export const useAgentStore = create<AgentState>((set, get) => {
     },
 
     deleteSession: async (id) => {
+      const deletingActiveChat = get().chatSessionId === id;
+      if (deletingActiveChat && get().busy) return;
+      if (deletingActiveChat) {
+        turnGeneration += 1;
+        activeTurnController?.abort();
+        activeTurnController = null;
+      }
       await deleteSessionRow(id);
-      if (get().chatSessionId === id) {
-        set({ chatSessionId: null, chatEntries: [], chatTitle: null });
+      if (deletingActiveChat && get().chatSessionId === id) {
+        await clearChatHistory();
+        set({
+          messages: [GREETING],
+          busy: false,
+          typing: false,
+          chatSessionId: null,
+          chatEntries: [],
+          chatTitle: null,
+        });
       }
       set({ sessions: await loadAgentSessions() });
     },
 
     resumeSession: async (id) => {
+      if (get().busy) return;
+      turnGeneration += 1;
+      activeTurnController?.abort();
+      activeTurnController = null;
       const { sessions, chatSessionId, chatEntries, chatTitle } = get();
       const session = sessions.find((s) => s.id === id);
       if (!session) return;

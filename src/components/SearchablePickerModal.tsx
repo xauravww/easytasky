@@ -72,7 +72,12 @@ export default function SearchablePickerModal({
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
-            <Pressable onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Pressable
+              style={styles.closeBtn}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close picker"
+            >
               <Ionicons name="close" size={22} color={SUB} />
             </Pressable>
           </View>
@@ -83,7 +88,7 @@ export default function SearchablePickerModal({
             <TextInput
               style={styles.searchInput}
               placeholder={placeholder}
-              placeholderTextColor="#555555"
+              placeholderTextColor={SUB}
               value={query}
               onChangeText={setQuery}
               autoCapitalize="none"
@@ -91,7 +96,12 @@ export default function SearchablePickerModal({
               autoFocus={Platform.OS !== "web"}
             />
             {query.length > 0 && (
-              <Pressable onPress={() => setQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Pressable
+                onPress={() => setQuery("")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
                 <Ionicons name="close-circle" size={16} color={SUB} />
               </Pressable>
             )}
@@ -242,6 +252,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 4,
   },
+  closeBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   itemRowActive: {
     backgroundColor: "#222222",
   },

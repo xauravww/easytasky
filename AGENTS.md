@@ -10,8 +10,7 @@ Expo ships breaking changes every SDK release. APIs you remember are likely rena
 
 ## Talk mode (speech)
 
-- `@react-native-voice/voice` registers its native module as `RCTVoice`, but the library's JS reads `NativeModules.Voice` (always null). **Manual patch applied** to `node_modules/@react-native-voice/voice/dist/index.js`: line 8 uses `NativeModules.RCTVoice`. Re-apply after any `npm install` / clean checkout.
-- This is a dev-build feature: the app must be built with `expo run:android` (native mod) and connected to Metro via `adb reverse tcp:8081 tcp:8081`.
+- Speech input uses `expo-speech-recognition`. This is a dev-build feature: the app must be built with `expo run:android` (native mod) and connected to Metro via `adb reverse tcp:8081 tcp:8081`.
 - TTS uses HeyGen (`talk.ts`), key stored in AsyncStorage (`@easytasky/heygen-key`, never committed).
 
 ## Commands
@@ -50,4 +49,3 @@ Docs: https://docs.expo.dev/eas/index.md
 
 - **Strict Component Modularity**: Always break down UI elements into reusable components. Every small element—buttons, icon buttons, badges, chips, input fields, modal sheets, cards—must have dedicated, typed component abstractions (in `src/components/ui.tsx` or specialized component modules). Avoid repeating raw inline button/input JSX across screens.
 - **Virtualization & Infinite Scroll**: All lists (Tasks, Habits, Activity Logs, Archive, Rituals, Sections) must be fully optimized for large datasets. Use `FlatList` with `initialNumToRender`, `maxToRenderPerBatch`, `windowSize`, `getItemLayout` or `keyExtractor`, and infinite scroll/pagination handling (`onEndReached` or windowed slicing) to guarantee fluid 60fps performance on mobile.
-

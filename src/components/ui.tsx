@@ -13,31 +13,39 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-/**
- * Role-based color tokens (Material-3-ish, restrained product scheme).
- * All text colors are chosen to clear 4.5:1 against their surface.
- */
+/** Role-based tokens for EasyTasky's restrained black/orange product theme. */
 export const COLORS = {
-  // surfaces
-  bg: "#F2F6F3", // content scrim — faint green tint (chroma toward brand hue)
-  surface: "#FFFFFF", // cards, panels
-  surfaceVariant: "#E7EFEA", // chips, tonal buttons, selected fills
-  surfaceInverse: "#143228", // dark surfaces / headers
-  line: "#D8E3DC", // hairline / outline
-  // ink (text)
-  ink: "#10281D", // body + headings
-  muted: "#3E5649", // secondary text — 5.4:1 on surface
-  // brand
-  primary: "#0B6E46", // filled action — white text ~6.5:1
+  bg: "#141414",
+  surface: "#1A1A1A",
+  surfaceVariant: "#242424",
+  surfaceInverse: "#F3F3F3",
+  line: "#2A2A2A",
+  ink: "#FFFFFF",
+  muted: "#A6A6A6",
+  primary: "#FA6E1E",
   onPrimary: "#FFFFFF",
-  accent: "#12B76A", // indicators, selection, highlights (never text)
-  accentSoft: "#D9F2E5",
-  // semantic
-  warn: "#8A4708", // urgent text (deep amber) — 6.9:1 on white
-  warnSoft: "#FAE9D4",
-  danger: "#A62B27", // timebox / eliminate text — 5.6:1 on dangerSoft
-  dangerSoft: "#F9E6E4",
-  tint: "#E9F1EC",
+  accent: "#FA6E1E",
+  accentSoft: "rgba(250,110,30,0.14)",
+  warn: "#E0A93B",
+  warnSoft: "rgba(224,169,59,0.12)",
+  danger: "#E5484D",
+  dangerSoft: "rgba(229,72,77,0.12)",
+  tint: "#1E1E1E",
+};
+
+export const readableTextOn = (hex: string): string => {
+  const normalized = hex.replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return COLORS.ink;
+  const values = [0, 2, 4].map(
+    (offset) => parseInt(normalized.slice(offset, offset + 2), 16) / 255
+  );
+  const linear = values.map((value) =>
+    value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4)
+  );
+  const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+  const darkContrast = (luminance + 0.05) / 0.057;
+  const lightContrast = 1.05 / (luminance + 0.05);
+  return darkContrast >= lightContrast ? COLORS.onPrimary : COLORS.ink;
 };
 
 // Type ramp — fixed, tight ratio (product register: one family, system face).
@@ -63,8 +71,8 @@ const s = StyleSheet.create({
     marginBottom: 14,
     borderWidth: 1,
     borderColor: COLORS.line,
-    shadowColor: "#0B2E1D",
-    shadowOpacity: 0.04,
+    shadowColor: "#000000",
+    shadowOpacity: 0.16,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 1,
@@ -82,7 +90,7 @@ const s = StyleSheet.create({
   btnFilled: { backgroundColor: COLORS.primary },
   btnFilledText: { color: COLORS.onPrimary, fontWeight: "700", fontSize: TYPE.body },
   btnTonal: { backgroundColor: COLORS.surfaceVariant },
-  btnTonalText: { color: COLORS.primary, fontWeight: "600", fontSize: TYPE.body },
+  btnTonalText: { color: COLORS.ink, fontWeight: "600", fontSize: TYPE.body },
   btnOutlined: { backgroundColor: "transparent", borderWidth: 1.5, borderColor: COLORS.primary },
   btnOutlinedText: { color: COLORS.primary, fontWeight: "600", fontSize: TYPE.body },
   btnDisabled: { opacity: 0.45 },
@@ -151,7 +159,7 @@ export const Button: React.FC<{
 
   const sizeStyle =
     size === "sm"
-      ? { minHeight: 36, paddingHorizontal: 12, borderRadius: 10 }
+      ? { minHeight: 44, paddingHorizontal: 12, borderRadius: 12 }
       : size === "lg"
       ? { minHeight: 52, paddingHorizontal: 22, borderRadius: 16 }
       : {};
@@ -164,7 +172,15 @@ export const Button: React.FC<{
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      style={({ pressed }) => [s.btn, base, sizeStyle, style, pressed && { opacity: 0.8 }, disabled && s.btnDisabled]}
+      accessibilityState={{ disabled: !!disabled }}
+      style={({ pressed }) => [
+        s.btn,
+        base,
+        sizeStyle,
+        style,
+        pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] },
+        disabled && s.btnDisabled,
+      ]}
     >
       {icon ? (
         <Ionicons name={icon as never} size={size === "sm" ? 15 : 18} color={iconColor} />
@@ -200,11 +216,12 @@ export const IconButton: React.FC<{
     disabled={disabled}
     accessibilityRole="button"
     accessibilityLabel={accessibilityLabel}
+    accessibilityState={{ disabled }}
     style={({ pressed }) => [
       {
-        width: size + 18,
-        height: size + 18,
-        borderRadius: (size + 18) / 2,
+        width: Math.max(44, size + 18),
+        height: Math.max(44, size + 18),
+        borderRadius: Math.max(44, size + 18) / 2,
         backgroundColor: bg,
         alignItems: "center",
         justifyContent: "center",
@@ -224,7 +241,7 @@ export const Badge: React.FC<{
   color?: string;
   bg?: string;
   style?: StyleProp<ViewStyle>;
-}> = ({ count, color = "#FFFFFF", bg = COLORS.accent, style }) => {
+}> = ({ count, color = COLORS.onPrimary, bg = COLORS.accent, style }) => {
   if (count === undefined || count === null || count === "") return null;
   return (
     <View
@@ -251,6 +268,7 @@ export const Chip: React.FC<{ label: string; onPress?: () => void; active?: bool
   <Pressable
     onPress={onPress}
     accessibilityRole="button"
+    accessibilityState={{ selected: !!active }}
     style={({ pressed }) => [s.chip, active && s.chipActive, pressed && { opacity: 0.8 }]}
   >
     <Text style={active ? s.chipActiveText : s.chipDefaultText}>{label}</Text>

@@ -46,7 +46,6 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
     dependencies,
     sections,
     updateTask,
-    deleteTask,
     addSubtask,
     toggleSubtask,
     deleteSubtask,
@@ -71,10 +70,14 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
 
   // Dependency system
   const taskDeps = dependencies.filter((d) => d.task_id === task.id);
-  const blockerTasks = tasks.filter((t) => taskDeps.some((d) => d.depends_on_task_id === t.id));
+  const blockerTasks = tasks.filter(
+    (t) => t.status !== "unwanted" && taskDeps.some((d) => d.depends_on_task_id === t.id)
+  );
 
   // Eligible tasks to depend on (not self, not habits)
-  const candidateDeps = tasks.filter((t) => t.id !== task.id && !t.is_habit);
+  const candidateDeps = tasks.filter(
+    (t) => t.id !== task.id && !t.is_habit && t.status !== "unwanted"
+  );
 
   const mine = subtasks.filter((s) => s.task_id === task.id);
   const doneCount = mine.filter((s) => s.done).length;
@@ -411,11 +414,15 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
             </Pressable>
             <Pressable
               style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.6 }]}
-              onPress={() => { deleteTask(task.id); onClose(); }}
+              onPress={() => {
+                void updateTask(task.id, { status: "unwanted" });
+                onClose();
+              }}
               accessibilityRole="button"
+              accessibilityLabel={`Archive ${task.title}`}
             >
-              <Ionicons name="trash-outline" size={22} color={RED} />
-              <Text style={[styles.actionText, { color: RED }]}>Delete task</Text>
+              <Ionicons name="archive-outline" size={22} color={SUB} />
+              <Text style={[styles.actionText, { color: SUB }]}>Archive task</Text>
             </Pressable>
           </ScrollView>
         </View>

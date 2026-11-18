@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -90,7 +91,7 @@ export default function ArchivedTasksTool() {
               setPage(1);
             }}
             placeholder="Search archived tasks..."
-            placeholderTextColor="#666666"
+            placeholderTextColor={SUB}
           />
           {query.length > 0 && (
             <Pressable onPress={() => setQuery("")}>
@@ -164,7 +165,10 @@ export default function ArchivedTasksTool() {
             <View style={styles.actions}>
               <Pressable
                 style={styles.actionBtn}
-                onPress={() => updateTask(t.id, { status: "inbox" })}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void updateTask(t.id, { status: "inbox" });
+                }}
                 accessibilityRole="button"
                 accessibilityLabel="Restore task"
               >
@@ -174,7 +178,23 @@ export default function ArchivedTasksTool() {
 
               <Pressable
                 style={styles.actionBtn}
-                onPress={() => deleteTask(t.id)}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  Alert.alert(
+                    "Delete forever?",
+                    `“${t.title}” will be permanently deleted and cannot be restored.`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Delete",
+                        style: "destructive",
+                        onPress: () => {
+                          void deleteTask(t.id);
+                        },
+                      },
+                    ]
+                  );
+                }}
                 accessibilityRole="button"
                 accessibilityLabel="Delete forever"
               >
@@ -223,7 +243,9 @@ const styles = StyleSheet.create({
   sortChips: { flexDirection: "row", gap: 6 },
   sortChip: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
     borderRadius: 8,
     backgroundColor: CARD,
     borderWidth: 1,
@@ -248,7 +270,7 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", gap: 10, marginTop: 4 },
   metaText: { color: SUB, fontSize: 12 },
   actions: { flexDirection: "row", alignItems: "center", gap: 8 },
-  actionBtn: { flexDirection: "row", alignItems: "center", gap: 4, padding: 6 },
+  actionBtn: { minWidth: 44, minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 6 },
   restoreText: { color: ACCENT, fontSize: 13, fontWeight: "600" },
   emptyContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 48, paddingHorizontal: 20 },
   emptyTitle: { color: TEXT, fontSize: 16, fontWeight: "700", marginTop: 12 },

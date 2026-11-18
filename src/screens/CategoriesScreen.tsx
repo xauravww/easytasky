@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -23,6 +24,7 @@ const LINE = "#2A2A2A";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
 const ACCENT = "#FA6E1E";
+const ON_ACCENT = "#FFFFFF";
 const RED = "#E5484D";
 
 const PRESET_COLORS = [
@@ -145,12 +147,28 @@ export default function CategoriesScreen({ onBack }: Props) {
     setEditingSec(null);
   };
 
-  const handleDelete = async (id: string) => {
-    await deleteSection(id);
-    if (editingSec?.id === id) {
-      setShowAddForm(false);
-      setEditingSec(null);
-    }
+  const handleDelete = (section: Section) => {
+    const count = taskCountMap[section.id] || 0;
+    Alert.alert(
+      "Delete category?",
+      count > 0
+        ? `“${section.name}” will be deleted. ${count} ${count === 1 ? "task" : "tasks"} will remain in Tasks without a category.`
+        : `“${section.name}” will be permanently deleted.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deleteSection(section.id);
+            if (editingSec?.id === section.id) {
+              setShowAddForm(false);
+              setEditingSec(null);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -179,7 +197,7 @@ export default function CategoriesScreen({ onBack }: Props) {
           style={({ pressed }) => [styles.newBtn, pressed && { opacity: 0.8 }]}
           onPress={openAdd}
         >
-          <Ionicons name="add" size={18} color="#FFFFFF" />
+          <Ionicons name="add" size={18} color={ON_ACCENT} />
           <Text style={styles.newBtnText}>Add</Text>
         </Pressable>
       </View>
@@ -191,7 +209,7 @@ export default function CategoriesScreen({ onBack }: Props) {
           <TextInput
             style={styles.searchInput}
             placeholder="Search categories..."
-            placeholderTextColor="#555555"
+            placeholderTextColor={SUB}
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
@@ -323,7 +341,7 @@ export default function CategoriesScreen({ onBack }: Props) {
 
                 <Pressable
                   style={styles.iconActionBtn}
-                  onPress={() => handleDelete(item.id)}
+                  onPress={() => handleDelete(item)}
                   accessibilityRole="button"
                   accessibilityLabel="Delete category"
                 >
@@ -375,7 +393,7 @@ export default function CategoriesScreen({ onBack }: Props) {
             <TextInput
               style={styles.drawerInput}
               placeholder="e.g. Work, Health, Personal, EasyTasky"
-              placeholderTextColor="#555555"
+              placeholderTextColor={SUB}
               value={name}
               onChangeText={setName}
               autoFocus
@@ -440,14 +458,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerBtn: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
   headerIcon: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -467,11 +485,11 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: ACCENT,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    minHeight: 44,
     borderRadius: 10,
   },
   newBtnText: {
-    color: "#FFFFFF",
+    color: ON_ACCENT,
     fontSize: 13,
     fontWeight: "700",
   },
@@ -634,15 +652,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   saveBtn: {
-    paddingVertical: 12,
+    minHeight: 44,
+    justifyContent: "center",
     paddingHorizontal: 22,
     borderRadius: 12,
     backgroundColor: ACCENT,
   },
   saveBtnText: {
-    color: "#FFFFFF",
+    color: ON_ACCENT,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   listContent: {
     paddingHorizontal: 16,
@@ -686,9 +705,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   iconActionBtn: {
-    padding: 8,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: FIELD,
+    alignItems: "center",
+    justifyContent: "center",
   },
   emptyContainer: {
     alignItems: "center",

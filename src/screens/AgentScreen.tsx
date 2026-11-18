@@ -1,5 +1,23 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  AccessibilityInfo,
+  Animated,
+  Easing,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import Markdown from "react-native-markdown-display";
@@ -19,6 +37,7 @@ const BUBBLE_AI = "#1E1E1E";
 const LINE = "#262626";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
+const ON_ACCENT = "#FFFFFF";
 
 const PHASES: [number, number, number][] = [
   [0, 0.33, 0.66],
@@ -28,7 +47,26 @@ const PHASES: [number, number, number][] = [
 
 function TypingIndicator() {
   const [anim] = useState(() => new Animated.Value(0));
+  const [reduceMotion, setReduceMotion] = useState(false);
+
   useEffect(() => {
+    if (Platform.OS === "ios") AccessibilityInfo.announceForAccessibility("Agent is typing");
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (active) setReduceMotion(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) return;
     const loop = Animated.loop(
       Animated.timing(anim, {
         toValue: 1,
@@ -39,7 +77,7 @@ function TypingIndicator() {
     );
     loop.start();
     return () => loop.stop();
-  }, [anim]);
+  }, [anim, reduceMotion]);
 
   return (
     <View style={[styles.bubble, styles.bubbleAi, styles.typing]}>
@@ -48,7 +86,7 @@ function TypingIndicator() {
           key={i}
           style={[
             styles.typingDot,
-            {
+            reduceMotion ? { opacity: 0.65 } : {
               opacity: anim.interpolate({ inputRange: phase, outputRange: [0.25, 1, 0.25], extrapolate: "clamp" }),
               transform: [
                 {
@@ -64,7 +102,8 @@ function TypingIndicator() {
 }
 
 export default function AgentScreen() {
-  const listRef = useRef<any>(null);
+  const listRef = useRef<FlatList<AgentMessage>>(null);
+  const shouldAutoScrollRef = useRef(true);
   const [keyboardH, setKeyboardH] = useState(0);
 
   useEffect(() => {
@@ -98,7 +137,19 @@ export default function AgentScreen() {
   const [aiReady, setAiReady] = useState(aiEnabled());
   const [playingMsgIndex, setPlayingMsgIndex] = useState<number | null>(null);
   const [speakingLoadingIndex, setSpeakingLoadingIndex] = useState<number | null>(null);
+  const [visibleMessageCount, setVisibleMessageCount] = useState(80);
   const activePlayerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
+
+  const visibleMessages = messages.slice(-visibleMessageCount);
+  const messageOffset = messages.length - visibleMessages.length;
+
+  useEffect(() => {
+    shouldAutoScrollRef.current = true;
+    const frame = requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [chatSessionId]);
 
   const stopActiveAudio = () => {
     if (activePlayerRef.current) {
@@ -187,6 +238,15 @@ export default function AgentScreen() {
 
   const send = () => submit(input, messages);
 
+  const handleMessageScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    shouldAutoScrollRef.current = distanceFromBottom < 72;
+    if (contentOffset.y < 36 && visibleMessageCount < messages.length) {
+      setVisibleMessageCount((count) => Math.min(count + 80, messages.length));
+    }
+  };
+
   const copyMessage = async (content: string) => {
     try {
       await Clipboard.setStringAsync(content);
@@ -207,7 +267,11 @@ export default function AgentScreen() {
   };
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      enabled={Platform.OS === "ios"}
+    >
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.h1}>Agent</Text>
@@ -219,7 +283,7 @@ export default function AgentScreen() {
           accessibilityRole="button"
           accessibilityLabel="Chat and call history"
         >
-          <Ionicons name="menu" size={20} color={SUB} />
+          <Ionicons name="time-outline" size={20} color={SUB} />
         </Pressable>
         <Pressable
           style={styles.clearBtn}
@@ -231,27 +295,58 @@ export default function AgentScreen() {
         </Pressable>
         {messages.length > 1 && (
           <Pressable
-            style={styles.clearBtn}
+            style={[styles.clearBtn, busy && styles.controlDisabled]}
             onPress={() => {
               void clearChat();
             }}
             accessibilityRole="button"
             accessibilityLabel="New chat"
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
           >
             <Ionicons name="add" size={22} color={SUB} />
           </Pressable>
         )}
       </View>
 
-      <ScrollView
+      {!aiReady ? (
+        <Pressable
+          style={({ pressed }) => [styles.setupBanner, pressed && styles.controlPressed]}
+          onPress={() => setSettings(true)}
+          accessibilityRole="button"
+          accessibilityLabel="AI is not configured. Open settings"
+        >
+          <View style={styles.setupIcon}>
+            <Ionicons name="sparkles-outline" size={18} color={ACCENT} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.setupTitle}>Finish setting up Agent</Text>
+            <Text style={styles.setupText}>Add your AI provider details to start chatting.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={SUB} />
+        </Pressable>
+      ) : null}
+
+      <FlatList
+        data={visibleMessages}
+        keyExtractor={(_, index) => `${messageOffset + index}`}
         style={styles.list}
         contentContainerStyle={styles.listContent}
         ref={listRef}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-      >
-        {messages.map((m, i) => (
+        initialNumToRender={20}
+        maxToRenderPerBatch={12}
+        windowSize={9}
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        keyboardShouldPersistTaps="handled"
+        onScroll={handleMessageScroll}
+        scrollEventThrottle={32}
+        onContentSizeChange={() => {
+          if (shouldAutoScrollRef.current) listRef.current?.scrollToEnd({ animated: true });
+        }}
+        renderItem={({ item: m, index }) => {
+          const i = messageOffset + index;
+          return (
           <View
-            key={i}
             style={[styles.bubble, m.role === "user" ? styles.bubbleMe : styles.bubbleAi]}
           >
             {m.role === "user" ? (
@@ -298,9 +393,20 @@ export default function AgentScreen() {
               </>
             )}
           </View>
-        ))}
-        {typing && <TypingIndicator />}
-      </ScrollView>
+          );
+        }}
+        ListFooterComponent={
+          typing ? (
+            <View
+              accessible
+              accessibilityLiveRegion="polite"
+              accessibilityLabel="Agent is typing"
+            >
+              <TypingIndicator />
+            </View>
+          ) : undefined
+        }
+      />
 
       {settings && <SettingsModal onClose={() => setSettings(false)} onSaved={() => setAiReady(aiEnabled())} />}
       {invHint.length > 0 && (
@@ -321,7 +427,7 @@ export default function AgentScreen() {
           </ScrollView>
         </View>
       )}
-      <View style={[styles.inputRow, { paddingBottom: Math.max(keyboardH - 56, 8) }]}>
+      <View style={[styles.inputRow, { paddingBottom: Math.max(keyboardH - 56, 10) }]}>
         <TextInput
           value={input}
           onChangeText={setInput}
@@ -342,12 +448,23 @@ export default function AgentScreen() {
             }
           }}
           accessibilityRole="button"
-          accessibilityLabel="Start voice call"
+          accessibilityLabel={callOpen && callMinimized ? "Restore voice call" : "Start voice call"}
         >
-          <Ionicons name="call" size={20} color={(callOpen && callMinimized) ? "#FFFFFF" : ACCENT} />
+          <Ionicons name="call" size={20} color={(callOpen && callMinimized) ? ON_ACCENT : ACCENT} />
         </Pressable>
-        <Pressable style={[styles.sendBtn, busy && { opacity: 0.5 }]} onPress={send} disabled={busy} accessibilityRole="button" accessibilityLabel="Send">
-          <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
+        <Pressable
+          style={({ pressed }) => [
+            styles.sendBtn,
+            (busy || !input.trim()) && styles.controlDisabled,
+            pressed && !busy && !!input.trim() && styles.controlPressed,
+          ]}
+          onPress={send}
+          disabled={busy || !input.trim()}
+          accessibilityRole="button"
+          accessibilityLabel="Send"
+          accessibilityState={{ disabled: busy || !input.trim(), busy }}
+        >
+          <Ionicons name="arrow-up" size={22} color={ON_ACCENT} />
         </Pressable>
       </View>
 
@@ -363,9 +480,10 @@ export default function AgentScreen() {
           onRefresh={refreshHistory}
           onDelete={deleteSession}
           onResume={(session) => resumeSession(session.id)}
+          disabled={busy}
         />
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -393,22 +511,46 @@ const mdStyles = {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
   header: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
-  h1: { color: TEXT, fontSize: 26, fontWeight: "600" },
+  h1: { color: TEXT, fontSize: 30, lineHeight: 36, fontWeight: "700", letterSpacing: -0.5 },
   headerSub: { color: SUB, fontSize: 12, marginTop: 2 },
-  clearBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "#1E1E1E", borderWidth: 1, borderColor: LINE },
+  clearBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "#1E1E1E", borderWidth: 1, borderColor: LINE },
+  setupBanner: {
+    minHeight: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 16,
+    backgroundColor: "rgba(250,110,30,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(250,110,30,0.28)",
+  },
+  setupIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "rgba(250,110,30,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  setupTitle: { color: TEXT, fontSize: 14, lineHeight: 19, fontWeight: "700" },
+  setupText: { color: SUB, fontSize: 12, lineHeight: 17, marginTop: 1 },
   list: { flex: 1 },
-  listContent: { paddingHorizontal: 16, paddingVertical: 8 },
+  listContent: { paddingHorizontal: 16, paddingVertical: 10 },
   bubble: { maxWidth: "82%", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 8 },
   bubbleMe: { alignSelf: "flex-end", backgroundColor: BUBBLE_ME, borderTopRightRadius: 4 },
   bubbleAi: { alignSelf: "flex-start", backgroundColor: BUBBLE_AI, borderWidth: 1, borderColor: LINE, borderTopLeftRadius: 4 },
   typing: { flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: 14 },
   typingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: SUB },
-  textMe: { color: "#FFFFFF", fontSize: 15 },
+  textMe: { color: ON_ACCENT, fontSize: 15, lineHeight: 21, fontWeight: "500" },
   textAi: { color: TEXT, fontSize: 15 },
   msgActions: { flexDirection: "row", gap: 16, marginTop: 10, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: LINE },
-  msgAction: { flexDirection: "row", alignItems: "center", gap: 5 },
+  msgAction: { flexDirection: "row", alignItems: "center", gap: 5, minHeight: 40, paddingHorizontal: 2 },
   msgActionText: { color: SUB, fontSize: 12, fontWeight: "600" },
-  inputRow: { flexDirection: "row", alignItems: "flex-end", gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
+  inputRow: { flexDirection: "row", alignItems: "flex-end", gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: LINE },
   agentHint: { paddingHorizontal: 16, paddingTop: 8, gap: 8 },
   agentHintTitle: { color: SUB, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
   agentChip: {
@@ -441,4 +583,6 @@ const styles = StyleSheet.create({
   micBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: ACCENT, alignItems: "center", justifyContent: "center" },
   micBtnActive: { backgroundColor: ACCENT },
   talkBtnOn: { backgroundColor: ACCENT },
+  controlDisabled: { opacity: 0.38 },
+  controlPressed: { opacity: 0.76, transform: [{ scale: 0.96 }] },
 });

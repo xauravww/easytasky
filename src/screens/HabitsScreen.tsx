@@ -1,19 +1,21 @@
 import React, { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { habitStreak, useStore } from "../store/useStore";
 import { addDays, dayKey } from "../utils/time";
 import type { Task } from "../db/database";
 import HabitDetailModal from "../components/HabitDetailModal";
 import HabitQuantityModal from "../components/HabitQuantityModal";
+import { readableTextOn } from "../components/ui";
 
 const BG = "#141414";
 const CARD = "#1A1A1A";
 const LINE = "#262626";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
-const IDLE = "#6F6F6F";
+const IDLE = "#9C9C9C";
 const ACCENT = "#FA6E1E";
+const ON_ACCENT = "#FFFFFF";
 
 const PALETTE = ["#E5484D", "#D8B62E", "#4CC3E8", "#12B76A", "#8B5CF6"];
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -22,10 +24,14 @@ export default function HabitsScreen() {
   const { tasks, habitChecks, addTask, deleteTask, toggleHabit, logHabitValue, refreshAll } = useStore();
 
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
   const onRefresh = async () => {
     setRefreshing(true);
+    setRefreshError("");
     try {
       await refreshAll();
+    } catch {
+      setRefreshError("Couldn’t refresh habits. Tap to try again.");
     } finally {
       setRefreshing(false);
     }
@@ -39,12 +45,13 @@ export default function HabitsScreen() {
   const [habitType, setHabitType] = useState<"boolean" | "quantity">("boolean");
   const [targetValue, setTargetValue] = useState("1");
   const [unit, setUnit] = useState("times");
+  const [submitting, setSubmitting] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(40);
   const [selectedHabit, setSelectedHabit] = useState<Task | null>(null);
   const [qtyModalHabit, setQtyModalHabit] = useState<{ habit: Task; currentVal: number } | null>(null);
 
   const habits = tasks.filter((t) => t.is_habit === 1);
   const today = dayKey();
-  const doneToday = habits.filter((h) => habitChecks.some((c) => c.habit_id === h.id && c.day === today)).length;
 
   // Last 7 days, oldest → today (TickTick-style week strip).
   const week = useMemo(
@@ -65,32 +72,73 @@ export default function HabitsScreen() {
   };
 
   const scheduled = habits.filter(dueToday);
-  const submit = () => {
-    if (!title.trim()) return;
+  const doneToday = scheduled.filter((habit) => {
+    const check = habitChecks.find((item) => item.habit_id === habit.id && item.day === today);
+    if (!check) return false;
+    const target = check.target_value ?? habit.habit_target_value ?? 1;
+    return habit.habit_type === "quantity" || target > 1 ? (check.value ?? 1) >= target : true;
+  }).length;
+  const visibleHabits = habits.slice(0, visibleCount);
+
+  const submit = async () => {
+    if (!title.trim() || submitting) return;
     const num = parseFloat(targetValue);
     const validNum = isNaN(num) || num <= 0 ? 1 : num;
     const finalType = validNum > 1 || habitType === "quantity" ? "quantity" : "boolean";
-    addTask({
-      title: title.trim(),
-      status: "habit",
-      is_habit: 1,
-      habit_freq: freq,
-      habit_days: freq === "weekly" ? days.join(",") : null,
-      habit_color: color,
-      habit_type: finalType,
-      habit_target_value: validNum,
-      habit_unit: finalType === "quantity" ? unit.trim() || "times" : "times",
-    });
-    setTitle("");
-    setAdding(false);
+    setSubmitting(true);
+    try {
+      await addTask({
+        title: title.trim(),
+        status: "habit",
+        is_habit: 1,
+        habit_freq: freq,
+        habit_days: freq === "weekly" ? days.join(",") : null,
+        habit_color: color,
+        habit_type: finalType,
+        habit_target_value: validNum,
+        habit_unit: finalType === "quantity" ? unit.trim() || "times" : "times",
+      });
+      setTitle("");
+      setAdding(false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const confirmDelete = (habit: Task) => {
+    Alert.alert(
+      "Delete habit?",
+      `“${habit.title}” and its check-in history will be permanently deleted.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void deleteTask(habit.id);
+          },
+        },
+      ]
+    );
   };
 
   return (
     <View style={styles.root}>
-      <ScrollView
+      <FlatList
+        data={visibleHabits}
+        keyExtractor={(item) => item.id}
         style={styles.root}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        initialNumToRender={12}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        onEndReachedThreshold={0.35}
+        onEndReached={() => {
+          if (visibleCount < habits.length) {
+            setVisibleCount((count) => Math.min(count + 40, habits.length));
+          }
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -99,31 +147,52 @@ export default function HabitsScreen() {
             colors={[ACCENT]}
           />
         }
-      >
+        ListHeaderComponent={
+          <>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.h1}>Habits</Text>
           <Text style={styles.headerSub}>
-            {habits.length} habits · {doneToday}/{Math.max(scheduled.length, 1)} done today
+            {habits.length} habits · {scheduled.length ? `${doneToday}/${scheduled.length} done today` : "none scheduled today"}
           </Text>
         </View>
         <Pressable
-          style={({ pressed }) => [styles.addBtn, { marginRight: 8 }, pressed && { transform: [{ scale: 0.96 }] }]}
+          style={({ pressed }) => [styles.headerIconBtn, pressed && styles.controlPressed]}
           onPress={onRefresh}
+          disabled={refreshing}
           accessibilityRole="button"
           accessibilityLabel="Refresh habits"
+          accessibilityState={{ busy: refreshing }}
         >
-          <Ionicons name="refresh" size={18} color="#FFFFFF" />
+          {refreshing ? (
+            <ActivityIndicator size="small" color={ACCENT} />
+          ) : (
+            <Ionicons name="refresh" size={19} color={SUB} />
+          )}
         </Pressable>
         <Pressable
-          style={({ pressed }) => [styles.addBtn, pressed && { transform: [{ scale: 0.96 }] }]}
+          style={({ pressed }) => [styles.addBtn, pressed && styles.controlPressed]}
           onPress={() => setAdding((v) => !v)}
           accessibilityRole="button"
+          accessibilityLabel={adding ? "Close new habit form" : "Add habit"}
+          accessibilityState={{ expanded: adding }}
         >
-          <Ionicons name={adding ? "close" : "add"} size={20} color="#FFFFFF" />
+          <Ionicons name={adding ? "close" : "add"} size={20} color={ON_ACCENT} />
           <Text style={styles.addBtnText}>{adding ? "Close" : "Add"}</Text>
         </Pressable>
       </View>
+
+      {refreshError ? (
+        <Pressable
+          style={styles.inlineError}
+          onPress={onRefresh}
+          accessibilityRole="button"
+          accessibilityLabel="Habit refresh failed. Retry"
+        >
+          <Ionicons name="warning-outline" size={16} color="#FF8D90" />
+          <Text style={styles.inlineErrorText}>{refreshError}</Text>
+        </Pressable>
+      ) : null}
 
       {/* Week strip */}
       <View style={styles.weekStrip}>
@@ -160,6 +229,8 @@ export default function HabitsScreen() {
             <Pressable
               style={[styles.chip, habitType === "boolean" && styles.chipActive]}
               onPress={() => setHabitType("boolean")}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: habitType === "boolean" }}
             >
               <Text style={[styles.chipText, habitType === "boolean" && styles.chipTextActive]}>
                 Only Do (Check-in)
@@ -168,6 +239,8 @@ export default function HabitsScreen() {
             <Pressable
               style={[styles.chip, habitType === "quantity" && styles.chipActive]}
               onPress={() => setHabitType("quantity")}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: habitType === "quantity" }}
             >
               <Text style={[styles.chipText, habitType === "quantity" && styles.chipTextActive]}>
                 Quantity Based
@@ -208,7 +281,8 @@ export default function HabitsScreen() {
                 key={f}
                 style={[styles.chip, freq === f && styles.chipActive]}
                 onPress={() => setFreq(f)}
-                accessibilityRole="button"
+                accessibilityRole="radio"
+                accessibilityState={{ selected: freq === f }}
               >
                 <Text style={[styles.chipText, freq === f && styles.chipTextActive]}>{f === "daily" ? "Daily" : "Weekly"}</Text>
               </Pressable>
@@ -227,7 +301,7 @@ export default function HabitsScreen() {
                     accessibilityState={{ checked: days.includes(i) }}
                     accessibilityLabel={`Weekday ${d}`}
                   >
-                    <Text style={[styles.dayChipText, days.includes(i) && { color: "#FFFFFF", fontWeight: "700" }]}>{d}</Text>
+                    <Text style={[styles.dayChipText, days.includes(i) && styles.dayChipTextActive]}>{d}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -246,94 +320,131 @@ export default function HabitsScreen() {
               />
             ))}
           </View>
-          <Pressable style={({ pressed }) => [styles.submit, pressed && { opacity: 0.85 }]} onPress={submit} accessibilityRole="button">
-            <Text style={styles.submitText}>Create habit</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* Habit rows */}
-      {habits.length === 0 && (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>No habits yet</Text>
-          <Text style={styles.emptyHint}>Tap Add to start a streak.</Text>
-        </View>
-      )}
-      {habits.map((h) => {
-        const streak = habitStreak(habitChecks, h.id);
-        const checkedToday = habitChecks.some((c) => c.habit_id === h.id && c.day === today);
-        const habitColor = h.habit_color ?? ACCENT;
-        const targetValNum = h.habit_target_value ?? 1;
-        const isQty = h.habit_type === "quantity" || targetValNum > 1;
-        const todayCheck = habitChecks.find((c) => c.habit_id === h.id && c.day === today);
-        const currentQty = todayCheck?.value ?? (checkedToday ? 1 : 0);
-
-        const handleCheckPress = () => {
-          if (isQty) {
-            setQtyModalHabit({ habit: h, currentVal: currentQty });
-          } else {
-            toggleHabit(h.id, today);
-          }
-        };
-
-        return (
           <Pressable
-            key={h.id}
-            style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
-            onPress={() => setSelectedHabit(h)}
+            style={({ pressed }) => [
+              styles.submit,
+              (!title.trim() || submitting) && styles.disabled,
+              pressed && !!title.trim() && !submitting && styles.controlPressed,
+            ]}
+            onPress={submit}
+            disabled={!title.trim() || submitting}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !title.trim(), busy: submitting }}
           >
-            <Pressable
-              style={({ pressed }) => [
-                styles.check,
-                { borderColor: habitColor },
-                checkedToday && { backgroundColor: habitColor, borderColor: habitColor },
-                pressed && { opacity: 0.6 },
-              ]}
-              onPress={handleCheckPress}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: checkedToday }}
-              accessibilityLabel={`Check in ${h.title}`}
-            >
-              {checkedToday && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
-            </Pressable>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.rowTitle, checkedToday && { color: SUB }]} numberOfLines={1}>
-                {h.title}
-              </Text>
-              <View style={styles.rowSub}>
-                <Ionicons name="flame" size={13} color={streak > 0 ? "#D8B62E" : SUB} />
-                <Text style={styles.streakText}>{streak} day streak</Text>
-                {isQty ? (
-                  <Text style={[styles.freqText, { color: ACCENT, fontWeight: "600" }]}>
-                    · {currentQty}/{targetValNum} {h.habit_unit || "times"}
-                  </Text>
-                ) : null}
-                {h.habit_freq === "weekly" && h.habit_days ? (
-                  <Text style={styles.freqText}>
-                    · {h.habit_days.split(",").map((d) => WEEKDAYS[Number(d)]).join(" ")}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
-            {/* 7-day dots */}
-            <View style={styles.dots}>
-              {week.map((d) => {
-                const on = habitChecks.some((c) => c.habit_id === h.id && c.day === d.key);
-                return <View key={d.key} style={[styles.dot, on && { backgroundColor: habitColor }]} />;
-              })}
-            </View>
-            <Pressable
-              style={({ pressed }) => [styles.ghostIcon, pressed && { opacity: 0.5 }]}
-              onPress={() => deleteTask(h.id)}
-              accessibilityRole="button"
-              accessibilityLabel={`Delete ${h.title}`}
-            >
-              <Ionicons name="trash-outline" size={17} color={SUB} />
-            </Pressable>
+            <Text style={styles.submitText}>{submitting ? "Creating…" : "Create habit"}</Text>
           </Pressable>
-        );
-      })}
-    </ScrollView>
+        </View>
+      )}
+          </>
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <View style={styles.emptyIcon}>
+              <Ionicons name="flame-outline" size={26} color={ACCENT} />
+            </View>
+            <Text style={styles.emptyTitle}>Build one repeatable win</Text>
+            <Text style={styles.emptyHint}>Start small. A habit you can repeat beats a perfect plan.</Text>
+            <Pressable
+              style={({ pressed }) => [styles.emptyAction, pressed && styles.controlPressed]}
+              onPress={() => setAdding(true)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.emptyActionText}>Add your first habit</Text>
+            </Pressable>
+          </View>
+        }
+        renderItem={({ item: h }) => {
+          const streak = habitStreak(habitChecks, h.id);
+          const todayCheck = habitChecks.find((c) => c.habit_id === h.id && c.day === today);
+          const checkedToday = !!todayCheck;
+          const habitColor = h.habit_color ?? ACCENT;
+          const configuredTarget = h.habit_target_value ?? 1;
+          const targetValNum = todayCheck?.target_value ?? configuredTarget;
+          const isQty = h.habit_type === "quantity" || targetValNum > 1;
+          const currentQty = todayCheck?.value ?? (checkedToday ? 1 : 0);
+          const completedToday = isQty ? currentQty >= targetValNum : checkedToday;
+
+          const handleCheckPress = () => {
+            if (isQty) {
+              setQtyModalHabit({ habit: h, currentVal: currentQty });
+            } else {
+              void toggleHabit(h.id, today);
+            }
+          };
+
+          return (
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
+              onPress={() => setSelectedHabit(h)}
+              accessibilityRole="button"
+              accessibilityLabel={`${h.title}, ${streak} day streak${isQty ? `, ${currentQty} of ${targetValNum} ${h.habit_unit || "times"}` : completedToday ? ", completed today" : ", not completed today"}`}
+            >
+              <Pressable
+                style={({ pressed }) => [styles.checkTouch, pressed && { opacity: 0.6 }]}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  handleCheckPress();
+                }}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: completedToday }}
+                accessibilityLabel={`Check in ${h.title}`}
+              >
+                <View
+                  style={[
+                    styles.check,
+                    { borderColor: habitColor },
+                    completedToday && { backgroundColor: habitColor, borderColor: habitColor },
+                  ]}
+                >
+                  {completedToday ? (
+                    <Ionicons name="checkmark" size={16} color={readableTextOn(habitColor)} />
+                  ) : null}
+                </View>
+              </Pressable>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, completedToday && { color: SUB }]} numberOfLines={1}>
+                  {h.title}
+                </Text>
+                <View style={styles.rowSub}>
+                  <Ionicons name="flame" size={13} color={streak > 0 ? "#D8B62E" : SUB} />
+                  <Text style={styles.streakText}>{streak} day streak</Text>
+                  {isQty ? (
+                    <Text style={[styles.freqText, { color: ACCENT, fontWeight: "600" }]}>
+                      · {currentQty}/{targetValNum} {h.habit_unit || "times"}
+                    </Text>
+                  ) : null}
+                  {h.habit_freq === "weekly" && h.habit_days ? (
+                    <Text style={styles.freqText}>
+                      · {h.habit_days.split(",").map((d) => WEEKDAYS[Number(d)]).join(" ")}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+              <View
+                style={styles.dots}
+                accessible={false}
+                importantForAccessibility="no-hide-descendants"
+              >
+                {week.map((d) => {
+                  const on = habitChecks.some((c) => c.habit_id === h.id && c.day === d.key);
+                  return <View key={d.key} style={[styles.dot, on && { backgroundColor: habitColor }]} />;
+                })}
+              </View>
+              <Pressable
+                style={({ pressed }) => [styles.ghostIcon, pressed && { opacity: 0.5 }]}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  confirmDelete(h);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${h.title}`}
+              >
+                <Ionicons name="trash-outline" size={17} color={SUB} />
+              </Pressable>
+            </Pressable>
+          );
+        }}
+      />
 
     {selectedHabit && (
       <HabitDetailModal
@@ -371,7 +482,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     minHeight: 44,
   },
-  addBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
+  addBtnText: { color: ON_ACCENT, fontWeight: "800", fontSize: 14 },
+  headerIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#1E1E1E",
+    borderWidth: 1,
+    borderColor: LINE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  controlPressed: { opacity: 0.78, transform: [{ scale: 0.97 }] },
+  inlineError: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(229,72,77,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(229,72,77,0.25)",
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  inlineErrorText: { flex: 1, color: "#FFB3B5", fontSize: 13, lineHeight: 18 },
   weekStrip: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -435,7 +570,8 @@ const styles = StyleSheet.create({
   },
   dayChipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
   dayChipText: { color: SUB, fontSize: 13, fontWeight: "600" },
-  swatch: { width: 34, height: 34, borderRadius: 17, marginRight: 10, marginBottom: 8 },
+  dayChipTextActive: { color: ON_ACCENT, fontWeight: "800" },
+  swatch: { width: 44, height: 44, borderRadius: 22, marginRight: 10, marginBottom: 8 },
   swatchActive: { borderWidth: 3, borderColor: "#FFFFFF" },
   input: {
     backgroundColor: "#1E1E1E",
@@ -455,8 +591,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 8,
   },
-  submitText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
-  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
+  submitText: { color: ON_ACCENT, fontWeight: "800", fontSize: 15 },
+  disabled: { opacity: 0.42 },
+  row: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 64, paddingVertical: 8 },
+  checkTouch: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   check: {
     width: 30,
     height: 30,
@@ -471,8 +615,31 @@ const styles = StyleSheet.create({
   freqText: { fontSize: 13, color: SUB },
   dots: { flexDirection: "row", gap: 4 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#2A2A2A" },
-  ghostIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  empty: { alignItems: "center", paddingVertical: 40 },
-  emptyTitle: { color: TEXT, fontSize: 16, fontWeight: "700" },
-  emptyHint: { color: SUB, fontSize: 13, marginTop: 4 },
+  ghostIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  empty: { alignItems: "center", paddingHorizontal: 20, paddingVertical: 44 },
+  emptyIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: "rgba(250,110,30,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(250,110,30,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  emptyTitle: { color: TEXT, fontSize: 17, fontWeight: "700", textAlign: "center" },
+  emptyHint: { color: SUB, fontSize: 14, lineHeight: 20, marginTop: 6, textAlign: "center" },
+  emptyAction: {
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(250,110,30,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(250,110,30,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    marginTop: 18,
+  },
+  emptyActionText: { color: ACCENT, fontSize: 14, fontWeight: "700" },
 });

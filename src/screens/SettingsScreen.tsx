@@ -22,7 +22,7 @@ import {
 } from "../lib/talk";
 import { useStore } from "../store/useStore";
 import SectionsManagerModal from "../components/SectionsManagerModal";
-import BackupRestoreModal from "../components/BackupRestoreModal";
+import { BackupRestoreModal } from "../components/BackupRestoreModal";
 
 const BG = "#141414";
 const CARD = "#1C1C1C";
@@ -31,6 +31,7 @@ const LINE = "#2A2A2A";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
 const ACCENT = "#FA6E1E";
+const ON_ACCENT = "#FFFFFF";
 const GREEN = "#22C55E";
 const RED = "#EF4444";
 
@@ -635,7 +636,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 16,
   },
-  saveText: { color: "#FFFFFF", fontWeight: "700", fontSize: 16 },
+  saveText: { color: ON_ACCENT, fontWeight: "800", fontSize: 16 },
   clearBtn: {
     flexDirection: "row",
     alignItems: "center",

@@ -36,7 +36,7 @@ export default function CEO333Tool() {
   const today = dayKey();
 
   const openTasks = useMemo(
-    () => tasks.filter((t) => t.status !== "done" && t.status !== "habit"),
+    () => tasks.filter((t) => t.status !== "done" && t.status !== "habit" && t.status !== "unwanted"),
     [tasks]
   );
   const importantTasks = useMemo(

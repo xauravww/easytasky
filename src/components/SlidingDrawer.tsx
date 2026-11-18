@@ -1,7 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Animated,
-  Dimensions,
   FlatList,
   Modal,
   PanResponder,
@@ -10,13 +9,11 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "../store/useStore";
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.78, 300);
 
 const BG = "#141414";
 const CARD = "#1C1C1C";
@@ -39,8 +36,12 @@ type Props = {
 
 export default function SlidingDrawer({ onSelectOption }: Props) {
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const drawerWidth = Math.min(width * 0.78, 300);
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [drawerX] = useState(() => new Animated.Value(-drawerWidth));
+  const [handleY] = useState(() => new Animated.Value(260));
 
   const sections = useStore((s) => s.sections);
   const sectionFilter = useStore((s) => s.sectionFilter);
@@ -53,11 +54,17 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
     return sections.filter((s) => s.name.toLowerCase().includes(q));
   }, [sections, search]);
 
-  // Position of drawer slide (-DRAWER_WIDTH is offscreen, 0 is fully open)
-  const [drawerX] = useState(() => new Animated.Value(-DRAWER_WIDTH));
+  useEffect(() => {
+    if (!isOpen) drawerX.setValue(-drawerWidth);
+  }, [drawerWidth, drawerX, isOpen]);
 
-  // Draggable handle vertical offset (from bottom)
-  const [handleY] = useState(() => new Animated.Value(260));
+  useEffect(() => {
+    const maxBottom = Math.max(96, height - 180);
+    handleY.stopAnimation((value) => {
+      const clamped = Math.max(96, Math.min(maxBottom, value));
+      if (clamped !== value) handleY.setValue(clamped);
+    });
+  }, [handleY, height]);
 
   const openDrawer = () => {
     setIsOpen(true);
@@ -70,28 +77,43 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
 
   const closeDrawer = () => {
     Animated.timing(drawerX, {
-      toValue: -DRAWER_WIDTH,
+      toValue: -drawerWidth,
       duration: 200,
       useNativeDriver: true,
     }).start(() => setIsOpen(false));
   };
 
   // Pan responder for dragging the handle up and down
-  const [panResponder] = useState(() =>
-    PanResponder.create({
+  const panResponder = useMemo(() => {
+    let handleStartY = 260;
+    return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dy) > 4,
+      onPanResponderGrant: () => {
+        handleY.stopAnimation((value) => {
+          handleStartY = value;
+        });
+      },
       onPanResponderMove: (_, gestureState) => {
-        const newY = Math.max(120, Math.min(SCREEN_HEIGHT - 200, 260 - gestureState.dy));
+        const maxBottom = Math.max(96, height - 180);
+        const newY = Math.max(
+          96,
+          Math.min(maxBottom, handleStartY - gestureState.dy)
+        );
         handleY.setValue(newY);
       },
       onPanResponderRelease: (_, gestureState) => {
         if (Math.abs(gestureState.dx) < 6 && Math.abs(gestureState.dy) < 6) {
-          openDrawer();
+          setIsOpen(true);
+          Animated.spring(drawerX, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 4,
+          }).start();
         }
       },
-    })
-  );
+    });
+  }, [drawerX, handleY, height]);
 
   const handleSelectCategory = (catId: string | null) => {
     setSectionFilter(catId);
@@ -135,6 +157,7 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
               style={[
                 styles.drawerContent,
                 {
+                  width: drawerWidth,
                   paddingTop: insets.top + 16,
                   paddingBottom: insets.bottom + 16,
                   transform: [{ translateX: drawerX }],
@@ -147,7 +170,12 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
                   <Ionicons name="folder-outline" size={18} color={ACCENT} />
                   <Text style={styles.drawerHeaderTitle}>Categories</Text>
                 </View>
-                <Pressable onPress={closeDrawer} style={styles.closeDrawerBtn}>
+                <Pressable
+                  onPress={closeDrawer}
+                  style={styles.closeDrawerBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close categories drawer"
+                >
                   <Ionicons name="close" size={20} color={SUB} />
                 </Pressable>
               </View>
@@ -160,11 +188,16 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
                   value={search}
                   onChangeText={setSearch}
                   placeholder="Filter categories…"
-                  placeholderTextColor="#666666"
+                  placeholderTextColor={SUB}
                   clearButtonMode="while-editing"
                 />
                 {search.length > 0 && (
-                  <Pressable onPress={() => setSearch("")} hitSlop={6}>
+                  <Pressable
+                    onPress={() => setSearch("")}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear category search"
+                  >
                     <Ionicons name="close-circle" size={16} color={SUB} />
                   </Pressable>
                 )}
@@ -181,6 +214,9 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
                       pressed && styles.categoryRowPressed,
                     ]}
                     onPress={() => handleSelectCategory(null)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: sectionFilter === null }}
+                    accessibilityLabel="All tasks"
                   >
                     <View style={styles.categoryLeft}>
                       <View style={[styles.categoryDot, { backgroundColor: ACCENT }]} />
@@ -194,7 +230,7 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
                       </Text>
                     </View>
                     <Text style={styles.categoryCount}>
-                      {tasks.filter((t) => t.status !== "done" && t.status !== "habit").length}
+                      {tasks.filter((t) => t.status !== "done" && t.status !== "habit" && t.status !== "unwanted").length}
                     </Text>
                   </Pressable>
                 )}
@@ -222,7 +258,11 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
                   }
                   renderItem={({ item }) => {
                     const count = tasks.filter(
-                      (t) => t.section_id === item.id && t.status !== "done" && t.status !== "habit"
+                      (t) =>
+                        t.section_id === item.id &&
+                        t.status !== "done" &&
+                        t.status !== "habit" &&
+                        t.status !== "unwanted"
                     ).length;
                     const isSelected = sectionFilter === item.id;
                     return (
@@ -233,6 +273,9 @@ export default function SlidingDrawer({ onSelectOption }: Props) {
                           pressed && styles.categoryRowPressed,
                         ]}
                         onPress={() => handleSelectCategory(isSelected ? null : item.id)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: isSelected }}
+                        accessibilityLabel={`${item.name}, ${count} open tasks`}
                       >
                         <View style={styles.categoryLeft}>
                           <View style={[styles.categoryDot, { backgroundColor: item.color }]} />
@@ -291,7 +334,7 @@ const styles = StyleSheet.create({
   floatingHandleWrapper: {
     position: "absolute",
     left: 0,
-    zIndex: 9999,
+    zIndex: 40,
   },
   floatingHandle: {
     flexDirection: "row",
@@ -338,7 +381,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.65)",
   },
   drawerContent: {
-    width: DRAWER_WIDTH,
     backgroundColor: BG,
     borderRightWidth: 1,
     borderColor: LINE,
@@ -365,7 +407,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   closeDrawerBtn: {
-    padding: 4,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
   },
   searchRow: {
     flexDirection: "row",
@@ -428,7 +474,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   categoryCount: {
-    color: "#666666",
+    color: SUB,
     fontSize: 12,
     fontWeight: "600",
     marginLeft: 8,
@@ -438,7 +484,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   emptyCategoriesText: {
-    color: "#555555",
+    color: SUB,
     fontSize: 13,
   },
   manageBtn: {

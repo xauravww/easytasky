@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AgentSession } from "../lib/agentHistory";
@@ -8,6 +8,7 @@ const BG = "#000000";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
 const ACCENT = "#FA6E1E";
+const ON_ACCENT = "#FFFFFF";
 
 const fmtWhen = (ms: number): string => {
   const d = new Date(ms);
@@ -29,6 +30,7 @@ type Props = {
   onDelete?: (id: string) => Promise<void> | void;
   onResume?: (session: AgentSession) => Promise<void> | void;
   activeChatId?: string | null;
+  disabled?: boolean;
 };
 
 export default function AgentHistoryPanel({
@@ -38,20 +40,25 @@ export default function AgentHistoryPanel({
   onDelete,
   onResume,
   activeChatId,
+  disabled = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [visibleSessionCount, setVisibleSessionCount] = useState(20);
 
   useEffect(() => {
     void onRefresh?.();
   }, [onRefresh]);
 
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
+  const visibleSessions = sessions.slice(0, visibleSessionCount);
 
   // With onResume (main chat screen) a tap reopens the conversation directly,
   // ChatGPT-style. Otherwise it opens the read-only transcript.
   const handleRowPress = async (session: AgentSession) => {
     if (onResume) {
+      if (disabled) return;
       await onResume(session);
       onClose();
       return;
@@ -59,10 +66,28 @@ export default function AgentHistoryPanel({
     setSelectedId(session.id);
   };
 
-  const deleteSelected = async () => {
-    if (!selected) return;
-    await onDelete?.(selected.id);
-    setSelectedId(null);
+  const deleteSelected = () => {
+    if (!selected || disabled) return;
+    Alert.alert(
+      "Delete this session?",
+      "This conversation and its transcript will be permanently deleted.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await onDelete?.(selected.id);
+              setSelectedId(null);
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -78,7 +103,7 @@ export default function AgentHistoryPanel({
             <Ionicons name="arrow-back" size={20} color={TEXT} />
           </Pressable>
         ) : (
-          <View style={{ width: 36 }} />
+          <View style={{ width: 44 }} />
         )}
         <Text style={styles.title}>{selected ? "Transcript" : "History"}</Text>
         <Pressable
@@ -106,110 +131,142 @@ export default function AgentHistoryPanel({
               {fmtWhen(selected.started_at)} · {selected.entries.length} messages
             </Text>
           </View>
-          <ScrollView
+          <FlatList
+            data={selected.entries}
+            keyExtractor={(entry, index) => `${entry.at}-${index}`}
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
-          >
-            {selected.entries.length ? (
-              selected.entries.map((entry, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.bubble,
-                    entry.role === "user" ? styles.bubbleMe : styles.bubbleAi,
-                  ]}
-                >
-                  <Text style={styles.role}>{entry.role === "user" ? "You" : "Agent"}</Text>
-                  <Text style={styles.text}>{entry.content}</Text>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.empty}>No transcript for this session.</Text>
+            initialNumToRender={16}
+            maxToRenderPerBatch={12}
+            windowSize={7}
+            renderItem={({ item: entry }) => (
+              <View
+                style={[
+                  styles.bubble,
+                  entry.role === "user" ? styles.bubbleMe : styles.bubbleAi,
+                ]}
+              >
+                <Text style={styles.role}>{entry.role === "user" ? "You" : "Agent"}</Text>
+                <Text style={styles.text}>{entry.content}</Text>
+              </View>
             )}
-          </ScrollView>
+            ListEmptyComponent={
+              <Text style={styles.empty}>No transcript for this session.</Text>
+            }
+          />
           {onResume ? (
             <Pressable
-              style={styles.continueBtn}
+              style={[styles.continueBtn, disabled && styles.disabled]}
               onPress={async () => {
+                if (disabled) return;
                 await onResume(selected);
                 onClose();
               }}
               accessibilityRole="button"
               accessibilityLabel="Continue this chat"
+              accessibilityState={{ disabled }}
+              disabled={disabled}
             >
-              <Ionicons name="arrow-forward-circle" size={18} color="#FFFFFF" />
-              <Text style={styles.continueText}>Continue chat</Text>
+              <Ionicons name="arrow-forward-circle" size={18} color={ON_ACCENT} />
+              <Text style={styles.continueText}>
+                {selected.kind === "chat" ? "Continue chat" : "Continue as chat"}
+              </Text>
             </Pressable>
           ) : null}
           <Pressable
-            style={styles.deleteBtn}
+            style={[styles.deleteBtn, disabled && styles.disabled]}
             onPress={deleteSelected}
+            disabled={deleting || disabled}
             accessibilityRole="button"
             accessibilityLabel="Delete this session"
+            accessibilityState={{ busy: deleting, disabled }}
           >
-            <Ionicons name="trash-outline" size={16} color={TEXT} />
-            <Text style={styles.deleteText}>Delete this session</Text>
+            {deleting ? (
+              <ActivityIndicator size="small" color={TEXT} />
+            ) : (
+              <Ionicons name="trash-outline" size={16} color={TEXT} />
+            )}
+            <Text style={styles.deleteText}>{deleting ? "Deleting…" : "Delete this session"}</Text>
           </Pressable>
         </>
       ) : (
-        <ScrollView
+        <FlatList
+          data={visibleSessions}
+          keyExtractor={(session) => session.id}
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-        >
-          {sessions.length ? (
-            sessions.map((session) => {
-              const preview =
-                session.title ||
-                session.entries.find((e) => e.role === "user")?.content ||
-                (session.kind === "call" ? "Voice call" : "Chat");
-              const isActive = session.kind === "chat" && session.id === activeChatId && !session.ended_at;
-              return (
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          onEndReachedThreshold={0.35}
+          onEndReached={() => {
+            if (visibleSessionCount < sessions.length) {
+              setVisibleSessionCount((count) => Math.min(count + 20, sessions.length));
+            }
+          }}
+          renderItem={({ item: session }) => {
+            const preview =
+              session.title ||
+              session.entries.find((entry) => entry.role === "user")?.content ||
+              (session.kind === "call" ? "Voice call" : "Chat");
+            const isActive = session.kind === "chat" && session.id === activeChatId && !session.ended_at;
+            return (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.row,
+                  !!onResume && disabled && styles.disabled,
+                  pressed && styles.rowPressed,
+                ]}
+                onPress={() => handleRowPress(session)}
+                disabled={!!onResume && disabled}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !!onResume && disabled }}
+                accessibilityLabel={`${session.kind === "chat" ? "Chat" : "Call"} from ${fmtWhen(session.started_at)}, ${session.entries.length} messages. ${preview}`}
+              >
+                <View style={styles.rowIcon}>
+                  <Ionicons
+                    name={session.kind === "chat" ? "chatbubble-ellipses" : "call"}
+                    size={16}
+                    color={ACCENT}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.rowTop}>
+                    <Text style={styles.when}>{fmtWhen(session.started_at)}</Text>
+                    {isActive ? <Text style={styles.activeTag}>ACTIVE</Text> : null}
+                  </View>
+                  <Text style={styles.preview} numberOfLines={2}>
+                    {preview}
+                  </Text>
+                  <Text style={styles.count}>
+                    {session.kind === "chat" ? "Chat" : "Call"} · {session.entries.length} messages
+                  </Text>
+                </View>
                 <Pressable
-                  key={session.id}
-                  style={styles.row}
-                  onPress={() => handleRowPress(session)}
+                  style={styles.viewBtn}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setSelectedId(session.id);
+                  }}
                   accessibilityRole="button"
+                  accessibilityLabel="View transcript"
                 >
-                  <View style={styles.rowIcon}>
-                    <Ionicons
-                      name={session.kind === "chat" ? "chatbubble-ellipses" : "call"}
-                      size={16}
-                      color={ACCENT}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.rowTop}>
-                      <Text style={styles.when}>{fmtWhen(session.started_at)}</Text>
-                      {isActive ? <Text style={styles.activeTag}>ACTIVE</Text> : null}
-                    </View>
-                    <Text style={styles.preview} numberOfLines={2}>
-                      {preview}
-                    </Text>
-                    <Text style={styles.count}>
-                      {session.kind === "chat" ? "Chat" : "Call"} · {session.entries.length} messages
-                    </Text>
-                  </View>
-                  <Pressable
-                    style={styles.viewBtn}
-                    onPress={() => setSelectedId(session.id)}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel="View transcript"
-                  >
-                    <Ionicons name="document-text-outline" size={18} color={SUB} />
-                  </Pressable>
+                  <Ionicons name="document-text-outline" size={18} color={SUB} />
                 </Pressable>
-              );
-            })
-          ) : (
+              </Pressable>
+            );
+          }}
+          ListEmptyComponent={
             <Text style={styles.empty}>
               Nothing here yet. Your chats and calls will appear in this history.
             </Text>
-          )}
-          <Text style={styles.pruneNote}>Old chats and calls are pruned automatically.</Text>
-        </ScrollView>
+          }
+          ListFooterComponent={
+            <Text style={styles.pruneNote}>Old chats and calls are pruned automatically.</Text>
+          }
+        />
       )}
     </View>
   );
@@ -224,9 +281,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   circleBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#1C1C1C",
     alignItems: "center",
     justifyContent: "center",
@@ -258,6 +315,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
+  rowPressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
+  disabled: { opacity: 0.42 },
   rowIcon: {
     width: 32,
     height: 32,
@@ -280,7 +339,7 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   preview: { color: TEXT, fontSize: 14, lineHeight: 19 },
-  viewBtn: { padding: 6 },
+  viewBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   count: { color: SUB, fontSize: 11, marginTop: 4 },
   empty: { color: SUB, fontSize: 14, textAlign: "center", marginTop: 40, lineHeight: 20 },
   pruneNote: { color: "#6B6B6B", fontSize: 11, textAlign: "center", marginTop: 16 },
@@ -299,7 +358,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: ACCENT,
   },
-  continueText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
+  continueText: { color: ON_ACCENT, fontSize: 14, fontWeight: "800" },
   deleteBtn: {
     flexDirection: "row",
     alignItems: "center",

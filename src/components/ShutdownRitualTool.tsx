@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -19,6 +20,7 @@ const LINE = "#262626";
 const TEXT = "#FFFFFF";
 const SUB = "#9C9C9C";
 const ACCENT = "#FA6E1E";
+const ON_ACCENT = "#FFFFFF";
 const RED = "#E5484D";
 
 const DEFAULT_RITUALS = [
@@ -155,12 +157,19 @@ export default function ShutdownRitualTool() {
                 value={inputTitle}
                 onChangeText={setInputTitle}
                 placeholder="Add custom shutdown ritual..."
-                placeholderTextColor="#666666"
+                placeholderTextColor={SUB}
                 onSubmitEditing={handleAdd}
                 returnKeyType="done"
               />
-              <Pressable style={styles.addBtn} onPress={handleAdd}>
-                <Ionicons name="add" size={20} color="#FFFFFF" />
+              <Pressable
+                style={[styles.addBtn, !inputTitle.trim() && styles.addBtnDisabled]}
+                onPress={handleAdd}
+                disabled={!inputTitle.trim()}
+                accessibilityRole="button"
+                accessibilityLabel="Add shutdown ritual"
+                accessibilityState={{ disabled: !inputTitle.trim() }}
+              >
+                <Ionicons name="add" size={20} color={ON_ACCENT} />
               </Pressable>
             </View>
           </View>
@@ -176,7 +185,7 @@ export default function ShutdownRitualTool() {
                 accessibilityState={{ checked: isDone }}
               >
                 <View style={[styles.check, isDone && styles.checkOn]}>
-                  {isDone && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+                  {isDone && <Ionicons name="checkmark" size={16} color={ON_ACCENT} />}
                 </View>
                 <Text style={[styles.stepLabel, isDone && styles.stepLabelDone]}>
                   {ritual.title}
@@ -184,7 +193,22 @@ export default function ShutdownRitualTool() {
               </Pressable>
               <Pressable
                 style={styles.deleteBtn}
-                onPress={() => deleteShutdownRitual(ritual.id)}
+                onPress={() => {
+                  Alert.alert(
+                    "Delete ritual?",
+                    `“${ritual.title}” will be removed from your shutdown routine.`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Delete",
+                        style: "destructive",
+                        onPress: () => {
+                          void deleteShutdownRitual(ritual.id);
+                        },
+                      },
+                    ]
+                  );
+                }}
                 accessibilityRole="button"
                 accessibilityLabel="Delete ritual"
               >
@@ -256,6 +280,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  addBtnDisabled: { opacity: 0.42 },
   step: {
     flexDirection: "row",
     alignItems: "center",
@@ -279,8 +304,8 @@ const styles = StyleSheet.create({
   },
   checkOn: { backgroundColor: ACCENT, borderColor: ACCENT },
   stepLabel: { flex: 1, color: TEXT, fontSize: 14, lineHeight: 20 },
-  stepLabelDone: { color: "#666666", textDecorationLine: "line-through" },
-  deleteBtn: { padding: 6 },
+  stepLabelDone: { color: "#8A8A8A", textDecorationLine: "line-through" },
+  deleteBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   doneBanner: {
     flexDirection: "row",
     alignItems: "center",
