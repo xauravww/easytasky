@@ -27,9 +27,9 @@ Below is a direct tour of EasyTasky's core interface, captured from active mobil
 | :---: | :---: | :---: | :---: |
 | <img src="screenshots/feature_review.png" width="220" alt="Review & Velocity" /> | <img src="screenshots/feature_review_heatmap.png" width="220" alt="52-Week Velocity Heatmap" /> | <img src="screenshots/feature_eisenhower.png" width="220" alt="Eisenhower Matrix" /> | <img src="screenshots/feature_timebox.png" width="220" alt="Timeboxing Tool" /> |
 
-| ⏱️ Timeblocks | 📓 Next-Day Notebook | 📦 Archived Tasks | 🎚️ Moving Slider |
+| ⏱️ Timeblocks | 📓 Next-Day Notebook | 📦 Archived Tasks | 💬 AI Chat |
 | :---: | :---: | :---: | :---: |
-| <img src="screenshots/feature_333_plan.png" width="220" alt="3-3-3 Focus Planner" /> | <img src="screenshots/feature_nextday_notebook.png" width="220" alt="Next-Day Notebook" /> | <img src="screenshots/feature_shutdown.png" width="220" alt="Shutdown Ritual" /> | <img src="screenshots/feature_updater.png" width="220" alt="In-App Auto-Updater" /> |
+| <img src="screenshots/feature_333_plan.png" width="220" alt="3-3-3 Focus Planner" /> | <img src="screenshots/feature_nextday_notebook.png" width="220" alt="Next-Day Notebook" /> | <img src="screenshots/feature_shutdown.png" width="220" alt="Shutdown Ritual" /> | <img src="screenshots/feature_agent_chat.png" width="220" alt="AI Chat" /> |
 
 ---
 
