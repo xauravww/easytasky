@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import Markdown from "react-native-markdown-display";
 import { aiEnabled, chatWithTools, getAiConfig } from "../lib/aiClient";
-import { describeProposal, helpText, listAgents, parseInvocation, proposalsFromToolCalls } from "../lib/agents";
+import { helpText, listAgents, parseInvocation, proposalsFromToolCalls } from "../lib/agents";
 import type { BlockProposal } from "../lib/agents";
 import { synthesizeSpeech } from "../lib/talk";
 import { useAudioPlayer } from "expo-audio";
@@ -87,7 +87,6 @@ export default function AgentScreen() {
   const [typing, setTyping] = useState(false);
   const [settings, setSettings] = useState(false);
   const [aiReady, setAiReady] = useState(aiEnabled());
-  const [pending, setPending] = useState<{ proposals: BlockProposal[] } | null>(null);
   const [callOpen, setCallOpen] = useState(false);
   const [speechUrl, setSpeechUrl] = useState<string | null>(null);
   const player = useAudioPlayer(speechUrl ? { uri: speechUrl } : undefined);
@@ -137,48 +136,39 @@ export default function AgentScreen() {
     return parts.join("\n\n");
   };
 
-  const approve = async () => {
-    if (!pending || busy) return;
-    setBusy(true);
-    try {
-      const state = useStore.getState();
-      const applied: string[] = [];
-      const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
-      for (const p of pending.proposals) {
-        if (p.kind === "addBlock") {
-          await state.addBlock(p.block);
-          applied.push(`added "${p.block.label}" ${fmt24(p.block.start_min)}-${fmt24(p.block.end_min)}`);
-        } else if (p.kind === "updateBlock") {
-          const b = state.blocks.find((x) => x.id === p.id);
-          await state.updateBlock(p.id, p.patch);
-          applied.push(`updated "${b?.label ?? "#" + p.id}"`);
-        } else if (p.kind === "deleteBlock") {
-          const b = state.blocks.find((x) => x.id === p.id);
-          await state.deleteBlock(p.id);
-          applied.push(`removed "${b?.label ?? "#" + p.id}"`);
-        } else if (p.kind === "createSection") {
-          await state.addSection(p.name, p.color);
-          applied.push(`created section "${p.name}"`);
-        } else if (p.kind === "deleteSection") {
-          const sec = state.sections.find((s) => s.name.toLowerCase() === p.name.toLowerCase());
-          if (sec) {
-            await state.deleteSection(sec.id);
-            applied.push(`deleted section "${p.name}"`);
-          }
+  const executeProposals = async (proposals: BlockProposal[]): Promise<string> => {
+    const state = useStore.getState();
+    const applied: string[] = [];
+    const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
+    for (const p of proposals) {
+      if (p.kind === "addBlock") {
+        await state.addBlock(p.block);
+        applied.push(`added "${p.block.label}" ${fmt24(p.block.start_min)}-${fmt24(p.block.end_min)}`);
+      } else if (p.kind === "updateBlock") {
+        const b = state.blocks.find((x) => x.id === p.id);
+        await state.updateBlock(p.id, p.patch);
+        applied.push(`updated "${b?.label ?? "#" + p.id}"`);
+      } else if (p.kind === "deleteBlock") {
+        const b = state.blocks.find((x) => x.id === p.id);
+        await state.deleteBlock(p.id);
+        applied.push(`removed "${b?.label ?? "#" + p.id}"`);
+      } else if (p.kind === "createSection") {
+        await state.addSection(p.name, p.color);
+        applied.push(`created section "${p.name}"`);
+      } else if (p.kind === "deleteSection") {
+        const sec = state.sections.find((s) => s.name.toLowerCase() === p.name.toLowerCase());
+        if (sec) {
+          await state.deleteSection(sec.id);
+          applied.push(`deleted section "${p.name}"`);
         }
       }
-      const today = dayKey();
-      const now = useStore.getState().blocks.filter((b) => b.day === today).sort((a, b) => a.start_min - b.start_min);
-      const sched = now.length
-        ? now.map((b) => `${fmt24(b.start_min)}-${fmt24(b.end_min)}  ${b.label} (${b.type})`).join("\n")
-        : "(no blocks remain today)";
-      setPending(null);
-      setMessages((m) => [...m, { role: "assistant", content: `Applied to your schedule:\n${applied.join("\n")}\n\nToday now:\n${sched}` }]);
-    } catch (e) {
-      setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${e instanceof Error ? e.message : "Could not apply"}` }]);
-    } finally {
-      setBusy(false);
     }
+    const today = dayKey();
+    const now = useStore.getState().blocks.filter((b) => b.day === today).sort((a, b) => a.start_min - b.start_min);
+    const sched = now.length
+      ? now.map((b) => `${fmt24(b.start_min)}-${fmt24(b.end_min)}  ${b.label} (${b.type})`).join("\n")
+      : "(no blocks remain today)";
+    return `Applied changes to your schedule:\n${applied.map((a) => `• ${a}`).join("\n")}\n\nToday now:\n${sched}`;
   };
 
   const submit = async (text: string, base: Msg[]) => {
@@ -214,16 +204,14 @@ export default function AgentScreen() {
       if (reply.toolCalls && reply.toolCalls.length) {
         const { proposals, note } = proposalsFromToolCalls(reply.toolCalls, useStore.getState().blocks);
         if (proposals.length) {
-          setPending({ proposals });
-          setMessages((m) => [
-            ...m,
-            {
-              role: "assistant",
-              content: `I'd like to make ${proposals.length} change${proposals.length > 1 ? "s" : ""} to your today:\n\n${proposals.map(describeProposal).join("\n")}\n\nApprove or reject below.`,
-            },
-          ]);
+          const appliedSummary = await executeProposals(proposals);
+          const fullContent = `${appliedSummary}${note ? `\n\n${note}` : ""}`;
+          setMessages((m) => [...m, { role: "assistant", content: fullContent }]);
+          void maybeSpeak(fullContent);
         } else {
-          setMessages((m) => [...m, { role: "assistant", content: note ?? "I couldn't plan that change." }]);
+          const content = note ?? "I couldn't plan that change.";
+          setMessages((m) => [...m, { role: "assistant", content }]);
+          void maybeSpeak(content);
         }
       } else {
         const content = reply.text ?? "";
@@ -247,9 +235,13 @@ export default function AgentScreen() {
       const reply = await chatWithTools(next, buildContext());
       if (reply.toolCalls && reply.toolCalls.length) {
         const { proposals, note } = proposalsFromToolCalls(reply.toolCalls, useStore.getState().blocks);
-        const content = proposals.length
-          ? `I'd propose ${proposals.length} change${proposals.length > 1 ? "s" : ""}. Check the app to approve.`
-          : (note ?? "I couldn't act on that.");
+        if (proposals.length) {
+          const appliedSummary = await executeProposals(proposals);
+          const content = `${appliedSummary}${note ? `\n\n${note}` : ""}`;
+          setMessages((m) => [...m, { role: "assistant", content }]);
+          return content;
+        }
+        const content = note ?? "I couldn't act on that.";
         setMessages((m) => [...m, { role: "assistant", content }]);
         return content;
       }
@@ -283,7 +275,6 @@ export default function AgentScreen() {
     if (userIdx === -1) return;
     const text = messages[userIdx].content;
     const base = messages.slice(0, userIdx);
-    setPending(null);
     submit(text, base);
   };
 
@@ -307,7 +298,6 @@ export default function AgentScreen() {
             style={styles.clearBtn}
             onPress={() => {
               setMessages([{ role: "assistant", content: "Hi, I'm your agent. Ask me to plan, draft tasks, or estimate. Or just chat." }]);
-              setPending(null);
               setTyping(false);
               setBusy(false);
             }}
@@ -353,22 +343,6 @@ export default function AgentScreen() {
         ))}
         {typing && <TypingIndicator />}
       </ScrollView>
-
-      {pending && (
-        <View style={styles.approveBox}>
-          <Text style={styles.approveTitle}>{pending.proposals.length} change{pending.proposals.length > 1 ? "s" : ""} proposed</Text>
-          <View style={styles.approveActions}>
-            <Pressable style={styles.rejectBtn} onPress={() => { setPending(null); }} accessibilityRole="button">
-              <Ionicons name="close" size={16} color={SUB} />
-              <Text style={styles.rejectText}>Reject</Text>
-            </Pressable>
-            <Pressable style={styles.approveBtn} onPress={approve} disabled={busy} accessibilityRole="button">
-              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-              <Text style={styles.approveText}>Approve</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
 
       {settings && <SettingsModal onClose={() => setSettings(false)} onSaved={() => setAiReady(aiEnabled())} />}
       {invHint.length > 0 && (
@@ -458,25 +432,6 @@ const styles = StyleSheet.create({
   msgActionText: { color: SUB, fontSize: 12, fontWeight: "600" },
   inputRow: { flexDirection: "row", alignItems: "flex-end", gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 },
   agentHint: { paddingHorizontal: 16, paddingTop: 8, gap: 8 },
-  approveBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    marginHorizontal: 16,
-    marginTop: 8,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: "#1A1A1A",
-    borderWidth: 1,
-    borderColor: LINE,
-  },
-  approveTitle: { color: TEXT, fontSize: 13, fontWeight: "700", flex: 1 },
-  approveActions: { flexDirection: "row", gap: 8 },
-  rejectBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, borderColor: LINE },
-  rejectText: { color: SUB, fontSize: 14, fontWeight: "700" },
-  approveBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: BUBBLE_ME },
-  approveText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
   agentHintTitle: { color: SUB, fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
   agentChip: {
     flexDirection: "row",

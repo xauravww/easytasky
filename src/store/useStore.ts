@@ -401,6 +401,18 @@ export const useStore = create<StoreState>((set, get) => ({
     const db = await getDb();
     const cur = get().tasks.find((t) => t.id === id);
     if (!cur) return;
+
+    // Prune history older than 7 days & save current state as history snapshot
+    const now = Date.now();
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+    try {
+      await db.runAsync("DELETE FROM task_history WHERE updated_at < ?", [sevenDaysAgo]);
+      await db.runAsync(
+        "INSERT INTO task_history (task_id, snapshot, updated_at) VALUES (?, ?, ?)",
+        [id, JSON.stringify(cur), now]
+      );
+    } catch {}
+
     const next = { ...cur, ...patch };
     await db.runAsync(
       `UPDATE tasks SET title=?, context=?, energy=?, quadrant=?, status=?, delegate_note=?, due_date=?, estimated_min=?, actual_min=?, timebox_end=?, note=?, repeat_rule=?, remind_time=?, is_habit=?, habit_freq=?, habit_days=?, habit_color=?, section_id=?, habit_type=?, habit_target_value=?, habit_unit=? WHERE id=?`,

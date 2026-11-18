@@ -107,6 +107,13 @@ export type Subtask = {
   created_at: number;
 };
 
+export type TaskHistory = {
+  id: number;
+  task_id: string;
+  snapshot: string; // JSON stringified previous task state
+  updated_at: number; // epoch ms
+};
+
 export type DBData = {
   tasks: Task[];
   logs: ActivityLog[];
@@ -119,6 +126,7 @@ export type DBData = {
   dailyNotes: DailyNote[];
   shutdownRituals: ShutdownRitual[];
   shutdownChecks: ShutdownCheck[];
+  taskHistory?: TaskHistory[];
 };
 
 let db: SQLiteDatabase | null = null;
@@ -245,6 +253,19 @@ export const getDb = async (): Promise<SQLiteDatabase> => {
   await db.execAsync("CREATE TABLE IF NOT EXISTS daily_notes (id TEXT PRIMARY KEY, day TEXT NOT NULL UNIQUE, content TEXT NOT NULL, updated_at INTEGER NOT NULL)");
   await db.execAsync("CREATE TABLE IF NOT EXISTS shutdown_rituals (id TEXT PRIMARY KEY, title TEXT NOT NULL, sort INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1)");
   await db.execAsync("CREATE TABLE IF NOT EXISTS shutdown_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, ritual_id TEXT NOT NULL, day TEXT NOT NULL, UNIQUE(ritual_id, day))");
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS task_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      snapshot TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  // Automatically prune task history older than 7 days (7 * 24 * 60 * 60 * 1000 ms)
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  try {
+    await db.runAsync("DELETE FROM task_history WHERE updated_at < ?", [sevenDaysAgo]);
+  } catch {}
   await seedIfNeeded(db);
   return db;
 };
