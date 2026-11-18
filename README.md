@@ -2,11 +2,44 @@
 
 [![Latest Release](https://img.shields.io/github/v/release/xauravww/easytasky?color=FA6E1E&label=Latest%20Version&style=for-the-badge)](https://github.com/xauravww/easytasky/releases/latest)
 [![Free](https://img.shields.io/badge/Price-100%25%20Free-FA6E1E?style=for-the-badge)](#-100-free-policy)
-[![VirusTotal](https://img.shields.io/badge/VirusTotal-Clean%20(0%20Detections)-brightgreen?style=for-the-badge)](#-security--virustotal-verification)
+[![VirusTotal](https://img.shields.io/badge/VirusTotal-Clean%20(0%20Detections)-brightgreen?style=for-the-badge)](https://www.virustotal.com/gui/file/db8a5895ad4949cf126ff610090ca2f4601ecb18ea99d8608d9340a9252a2807)
 [![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-blue?style=for-the-badge)](https://github.com/xauravww/easytasky/releases/latest)
 [![License](https://img.shields.io/badge/Status-Actively%20Maintained-success?style=for-the-badge)](#-open-source--privacy)
 
 EasyTasky is a high-performance, mobile-first task, habit, and time-planning application built with React Native and native Android architecture. It features Eisenhower matrix prioritization, 52-week streak heatmaps, multi-count habit trackers with customizable units, deep focus stopwatch/Pomodoro sessions, an autonomous voice-enabled AI companion with full app and database control, completion chimes, and a built-in in-app auto-updater. Completely offline-capable, ad-free, and private.
+
+---
+
+## 📱 Visual App Tour
+
+Below is a direct tour of EasyTasky's core interface, captured from active mobile productivity sessions.
+
+| 📋 Tasks & Matrix | 📂 Category Drawer | 🎙️ AI Agent Chat | 📞 Voice Call Mode |
+| :---: | :---: | :---: | :---: |
+| <img src="screenshots/feature_tasks.png" width="220" alt="Tasks Screen" /> | <img src="screenshots/feature_sidebar.png" width="220" alt="Category Sidebar" /> | <img src="screenshots/feature_agent.png" width="220" alt="AI Agent Companion" /> | <img src="screenshots/feature_call_mode.png" width="220" alt="Voice Call Mode" /> |
+
+| 🔥 Habit Streaks & Week Strip | 📊 52-Week Year Heatmap | ⏱️ Pomodoro Focus Dial | 📈 Performance Velocity |
+| :---: | :---: | :---: | :---: |
+| <img src="screenshots/feature_habits.png" width="220" alt="Habits Screen" /> | <img src="screenshots/feature_habit_detail.png" width="220" alt="Annual Streak Heatmap" /> | <img src="screenshots/feature_focus.png" width="220" alt="Focus Timer" /> | <img src="screenshots/feature_review.png" width="220" alt="Review & Velocity" /> |
+
+| 🧭 4-Quadrant Eisenhower | ⏱️ Timebox & Buffer Schedule | 🌙 Shutdown Rituals | 📲 In-App Auto-Updater |
+| :---: | :---: | :---: | :---: |
+| <img src="screenshots/feature_eisenhower.png" width="220" alt="Eisenhower Matrix" /> | <img src="screenshots/feature_timebox.png" width="220" alt="Timeboxing Tool" /> | <img src="screenshots/feature_shutdown.png" width="220" alt="Shutdown Ritual" /> | <img src="screenshots/feature_updater.png" width="220" alt="In-App Auto-Updater" /> |
+
+---
+
+## 🛡️ Security & VirusTotal Verification
+
+Every release binary of EasyTasky is built in a clean environment and verified through VirusTotal's multi-engine malware analysis:
+
+| Verification Metric | Status |
+| :--- | :--- |
+| **VirusTotal Scan Status** | 🟢 **100% Clean (0 Security Vendors Flagged This File)** |
+| **Release File Name** | `app-release.apk` (v1.0.0) |
+| **SHA-256 Hash** | `db8a5895ad4949cf126ff610090ca2f4601ecb18ea99d8608d9340a9252a2807` |
+| **VirusTotal Report Link** | [🔍 View VirusTotal Scan Results](https://www.virustotal.com/gui/file/db8a5895ad4949cf126ff610090ca2f4601ecb18ea99d8608d9340a9252a2807) |
+
+---
 
 ---
 
