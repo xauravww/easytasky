@@ -34,10 +34,19 @@ const QUADRANTS = [
 
 export default function TasksScreen() {
   const insets = useSafeAreaInsets();
-  const { tasks, sections, addTask, updateTask, taskFilter, clearTaskFilter, canCompleteTask } = useStore();
+  const {
+    tasks,
+    sections,
+    addTask,
+    updateTask,
+    taskFilter,
+    clearTaskFilter,
+    sectionFilter,
+    setSectionFilter,
+    canCompleteTask,
+  } = useStore();
 
   const [query, setQuery] = useState("");
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
   const [quadrant, setQuadrant] = useState("urgent_important");
@@ -51,9 +60,9 @@ export default function TasksScreen() {
     const q = query.trim().toLowerCase();
     let base = q ? open.filter((t) => t.title.toLowerCase().includes(q)) : open;
     if (taskFilter) base = base.filter((t) => t.quadrant === taskFilter);
-    if (selectedSectionId) base = base.filter((t) => t.section_id === selectedSectionId);
+    if (sectionFilter) base = base.filter((t) => t.section_id === sectionFilter);
     return base;
-  }, [open, query, taskFilter, selectedSectionId]);
+  }, [open, query, taskFilter, sectionFilter]);
 
   const handleCheckTask = (t: Task) => {
     const check = canCompleteTask(t.id);
@@ -165,21 +174,21 @@ export default function TasksScreen() {
         {sections.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sectionChipsScroll}>
             <Pressable
-              style={[styles.sectionChip, selectedSectionId === null && styles.sectionChipActive]}
-              onPress={() => setSelectedSectionId(null)}
+              style={[styles.sectionChip, sectionFilter === null && styles.sectionChipActive]}
+              onPress={() => setSectionFilter(null)}
             >
-              <Text style={[styles.sectionChipText, selectedSectionId === null && styles.sectionChipTextActive]}>
+              <Text style={[styles.sectionChipText, sectionFilter === null && styles.sectionChipTextActive]}>
                 All
               </Text>
             </Pressable>
             {sections.map((sec) => (
               <Pressable
                 key={sec.id}
-                style={[styles.sectionChip, selectedSectionId === sec.id && styles.sectionChipActive]}
-                onPress={() => setSelectedSectionId(selectedSectionId === sec.id ? null : sec.id)}
+                style={[styles.sectionChip, sectionFilter === sec.id && styles.sectionChipActive]}
+                onPress={() => setSectionFilter(sectionFilter === sec.id ? null : sec.id)}
               >
                 <View style={[styles.sectionChipDot, { backgroundColor: sec.color }]} />
-                <Text style={[styles.sectionChipText, selectedSectionId === sec.id && styles.sectionChipTextActive]}>
+                <Text style={[styles.sectionChipText, sectionFilter === sec.id && styles.sectionChipTextActive]}>
                   {sec.name}
                 </Text>
               </Pressable>

@@ -79,12 +79,14 @@ type StoreState = {
   pomo: PomoState;
   focusReq: number;
   taskFilter: string | null;
+  sectionFilter: string | null;
   tasksReq: number;
   profile: string;
   init: () => Promise<void>;
   setProfile: (text: string) => Promise<void>;
   openTaskFilter: (q: string) => void;
   clearTaskFilter: () => void;
+  setSectionFilter: (id: string | null) => void;
   toggleHabit: (habitId: string, day: string) => Promise<void>;
   addSubtask: (taskId: string, title: string) => Promise<void>;
   toggleSubtask: (id: string) => Promise<void>;
@@ -145,6 +147,7 @@ export const useStore = create<StoreState>((set, get) => ({
   shutdownChecks: [],
   focusReq: 0,
   taskFilter: null,
+  sectionFilter: null,
   tasksReq: 0,
   profile: "",
   pomo: {
@@ -207,6 +210,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   openTaskFilter: (q) => set({ taskFilter: q, tasksReq: get().tasksReq + 1 }),
   clearTaskFilter: () => set({ taskFilter: null }),
+  setSectionFilter: (id) => set({ sectionFilter: id, tasksReq: get().tasksReq + 1 }),
 
   // Cross-screen trigger: attach the task, bump focusReq so the App shell switches
   // to the immersive Focus screen, and start the timer if idle.
