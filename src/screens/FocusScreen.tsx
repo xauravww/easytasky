@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-na
 import Svg, { Rect } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioPlayer } from "expo-audio";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "../store/useStore";
 import { dayKey } from "../utils/time";
@@ -73,10 +74,24 @@ export default function FocusScreen({
 
   const [musicOn, setMusicOn] = useState(false);
   const [tickOn, setTickOn] = useState(false);
+  const [keepAwakeOn, setKeepAwakeOn] = useState(true);
   const [sheet, setSheet] = useState(false);
 
   const noise = useAudioPlayer(require("../../assets/rain.mp3"));
   const tickAudio = useAudioPlayer(require("../../assets/tick.wav"));
+
+  // Keep screen awake if enabled
+  useEffect(() => {
+    const TAG = "focus_screen_keep_awake";
+    if (keepAwakeOn) {
+      void activateKeepAwakeAsync(TAG);
+    } else {
+      void deactivateKeepAwake(TAG);
+    }
+    return () => {
+      void deactivateKeepAwake(TAG);
+    };
+  }, [keepAwakeOn]);
 
   useEffect(() => {
     if (musicOn) {
@@ -155,9 +170,27 @@ export default function FocusScreen({
         <View style={styles.headerTitle}>
           <Text style={styles.headerText}>Focus</Text>
         </View>
-        <Pressable style={styles.minimize} onPress={() => setSheet(true)} accessibilityRole="button" accessibilityLabel="Focus settings">
-          <Ionicons name="settings-outline" size={22} color="#D6D6D6" />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            style={[styles.keepAwakeBtn, keepAwakeOn && styles.keepAwakeBtnActive]}
+            onPress={() => setKeepAwakeOn((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={keepAwakeOn ? "Screen stays on (enabled)" : "Screen stays on (disabled)"}
+          >
+            <Ionicons
+              name={keepAwakeOn ? "sunny" : "sunny-outline"}
+              size={14}
+              color={keepAwakeOn ? "#FFFFFF" : "#777777"}
+            />
+            <Text style={[styles.keepAwakeBtnText, keepAwakeOn && styles.keepAwakeBtnTextActive]}>
+              {keepAwakeOn ? "Always On" : "Auto Off"}
+            </Text>
+          </Pressable>
+
+          <Pressable style={styles.minimize} onPress={() => setSheet(true)} accessibilityRole="button" accessibilityLabel="Focus settings">
+            <Ionicons name="settings-outline" size={22} color="#D6D6D6" />
+          </Pressable>
+        </View>
       </View>
 
       {selectedTask && (
@@ -266,8 +299,37 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
+    marginLeft: 8,
     gap: 4,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  keepAwakeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#333333",
+    backgroundColor: "#161616",
+  },
+  keepAwakeBtnActive: {
+    borderColor: ACCENT,
+    backgroundColor: "rgba(250,110,30,0.18)",
+  },
+  keepAwakeBtnText: {
+    fontSize: 11,
+    color: "#777777",
+    fontWeight: "600",
+  },
+  keepAwakeBtnTextActive: {
+    color: "#FFFFFF",
   },
   headerText: { color: "#FFFFFF", fontSize: 22, fontWeight: "500" },
   taskChip: {

@@ -15,9 +15,10 @@ const RED = "#E5484D";
 type Props = {
   onSend: (text: string) => Promise<string>;
   onClose: () => void;
+  onMinimize?: () => void;
 };
 
-export default function CallModeModal({ onSend, onClose }: Props) {
+export default function CallModeModal({ onSend, onClose, onMinimize }: Props) {
   const insets = useSafeAreaInsets();
   const [orb] = useState(() => new Animated.Value(0));
   const [status, setStatus] = useState("Listening…");
@@ -229,7 +230,22 @@ export default function CallModeModal({ onSend, onClose }: Props) {
   return (
     <Modal visible animationType="fade" statusBarTranslucent transparent onRequestClose={onClose}>
       <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <Text style={styles.title}>Agent call</Text>
+        <View style={styles.topHeader}>
+          {onMinimize ? (
+            <Pressable
+              style={styles.minimizeBtn}
+              onPress={onMinimize}
+              accessibilityRole="button"
+              accessibilityLabel="Minimize call"
+            >
+              <Ionicons name="chevron-down" size={24} color="#FFFFFF" />
+            </Pressable>
+          ) : (
+            <View style={{ width: 36 }} />
+          )}
+          <Text style={styles.title}>Agent call</Text>
+          <View style={{ width: 36 }} />
+        </View>
 
         <Pressable
           style={styles.orbArea}
@@ -291,6 +307,16 @@ export default function CallModeModal({ onSend, onClose }: Props) {
 
         {/* Fixed bottom disconnect button: permanently in-view */}
         <View style={styles.bottomBar}>
+          {onMinimize ? (
+            <Pressable
+              style={styles.bottomMinimizeBtn}
+              onPress={onMinimize}
+              accessibilityRole="button"
+              accessibilityLabel="Minimize call"
+            >
+              <Ionicons name="contract" size={22} color="#FFFFFF" />
+            </Pressable>
+          ) : null}
           <Pressable style={styles.endCall} onPress={onClose} accessibilityRole="button" accessibilityLabel="End call">
             <Ionicons name="call" size={26} color="#FFFFFF" style={{ transform: [{ rotate: "135deg" }] }} />
           </Pressable>
@@ -302,6 +328,20 @@ export default function CallModeModal({ onSend, onClose }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG, alignItems: "center", justifyContent: "space-between", padding: 20 },
+  topHeader: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  minimizeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#1C1C1C",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   title: { color: SUB, fontSize: 16, fontWeight: "700", letterSpacing: 0.5 },
   orbArea: { alignItems: "center", justifyContent: "center", width: 190, height: 190 },
   orbHalo: { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: "rgba(250,110,30,0.25)" },
@@ -346,10 +386,24 @@ const styles = StyleSheet.create({
   transcript: { color: TEXT, fontSize: 14, lineHeight: 21 },
   bottomBar: {
     width: "100%",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingTop: 8,
     paddingBottom: 4,
+    position: "relative",
+  },
+  bottomMinimizeBtn: {
+    position: "absolute",
+    left: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#1C1C1C",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#333333",
   },
   endCall: {
     width: 68,

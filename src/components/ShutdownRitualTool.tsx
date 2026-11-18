@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import {
   FlatList,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -35,6 +36,17 @@ export default function ShutdownRitualTool() {
   const toggleShutdownCheck = useStore((s) => s.toggleShutdownCheck);
   const tasks = useStore((s) => s.tasks);
   const profile = useStore((s) => s.profile);
+  const refreshAll = useStore((s) => s.refreshAll);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshAll();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const today = dayKey();
 
@@ -94,6 +106,14 @@ export default function ShutdownRitualTool() {
         data={rituals}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={ACCENT}
+            colors={[ACCENT]}
+          />
+        }
         ListHeaderComponent={
           <View>
             <Text style={styles.heading}>Shutdown Ritual</Text>

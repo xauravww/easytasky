@@ -12,9 +12,11 @@ Notifications.setNotificationHandler({
 });
 
 const CHANNEL = "reminders";
+const FOCUS_CHANNEL = "focus_channel";
 const ACCENT = "#FA6E1E";
 let permAsked = false;
 const ids = new Map<string, string>();
+let focusNotificationId: string | null = null;
 
 const ensurePermission = async () => {
   if (permAsked) return;
@@ -23,8 +25,49 @@ const ensurePermission = async () => {
     name: "Task reminders",
     importance: AndroidImportance.HIGH,
   });
+  await Notifications.setNotificationChannelAsync(FOCUS_CHANNEL, {
+    name: "Focus Timer",
+    importance: AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+  });
   const cur = await Notifications.getPermissionsAsync();
   if (!cur.granted) await Notifications.requestPermissionsAsync();
+};
+
+export const scheduleFocusCompletionNotification = async (
+  title: string,
+  body: string,
+  secondsFromNow: number
+): Promise<void> => {
+  try {
+    await ensurePermission();
+    await cancelFocusNotification();
+    if (secondsFromNow <= 0) return;
+    focusNotificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        color: ACCENT,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: Math.max(1, Math.round(secondsFromNow)),
+        channelId: FOCUS_CHANNEL,
+      },
+    });
+  } catch (err) {
+    console.warn("scheduleFocusCompletionNotification failed", err);
+  }
+};
+
+export const cancelFocusNotification = async (): Promise<void> => {
+  try {
+    if (focusNotificationId) {
+      await Notifications.cancelScheduledNotificationAsync(focusNotificationId);
+      focusNotificationId = null;
+    }
+  } catch {}
 };
 
 // Reminder fires at the task's remind_time (HH:MM) on the due date, falling back

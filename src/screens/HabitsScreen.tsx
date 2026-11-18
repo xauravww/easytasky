@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { habitStreak, useStore } from "../store/useStore";
 import { addDays, dayKey } from "../utils/time";
@@ -19,7 +19,17 @@ const PALETTE = ["#E5484D", "#D8B62E", "#4CC3E8", "#12B76A", "#8B5CF6"];
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
 export default function HabitsScreen() {
-  const { tasks, habitChecks, addTask, deleteTask, toggleHabit, logHabitValue } = useStore();
+  const { tasks, habitChecks, addTask, deleteTask, toggleHabit, logHabitValue, refreshAll } = useStore();
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshAll();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
@@ -77,7 +87,19 @@ export default function HabitsScreen() {
 
   return (
     <View style={styles.root}>
-      <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        style={styles.root}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={ACCENT}
+            colors={[ACCENT]}
+          />
+        }
+      >
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.h1}>Habits</Text>
@@ -85,6 +107,14 @@ export default function HabitsScreen() {
             {habits.length} habits · {doneToday}/{Math.max(scheduled.length, 1)} done today
           </Text>
         </View>
+        <Pressable
+          style={({ pressed }) => [styles.addBtn, { marginRight: 8 }, pressed && { transform: [{ scale: 0.96 }] }]}
+          onPress={onRefresh}
+          accessibilityRole="button"
+          accessibilityLabel="Refresh habits"
+        >
+          <Ionicons name="refresh" size={18} color="#FFFFFF" />
+        </Pressable>
         <Pressable
           style={({ pressed }) => [styles.addBtn, pressed && { transform: [{ scale: 0.96 }] }]}
           onPress={() => setAdding((v) => !v)}

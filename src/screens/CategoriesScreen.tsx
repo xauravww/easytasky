@@ -5,6 +5,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -48,6 +49,17 @@ export default function CategoriesScreen({ onBack }: Props) {
   const addSection = useStore((s) => s.addSection);
   const updateSection = useStore((s) => s.updateSection);
   const deleteSection = useStore((s) => s.deleteSection);
+  const refreshAll = useStore((s) => s.refreshAll);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshAll();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Search & Filters & Sort
   const [searchQuery, setSearchQuery] = useState("");
@@ -262,6 +274,14 @@ export default function CategoriesScreen({ onBack }: Props) {
         maxToRenderPerBatch={10}
         windowSize={7}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={ACCENT}
+            colors={[ACCENT]}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="folder-open-outline" size={40} color="#333333" />

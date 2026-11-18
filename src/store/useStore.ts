@@ -15,7 +15,7 @@ import type {
   TimeBlock,
 } from "../db/database";
 import { dayKey, uid } from "../utils/time";
-import { syncTaskReminders } from "../lib/notifications";
+import { cancelFocusNotification, scheduleFocusCompletionNotification, syncTaskReminders } from "../lib/notifications";
 import { loadAiConfig } from "../lib/aiClient";
 import { loadHeyGenKey } from "../lib/talk";
 import { playCompletionSound } from "../utils/sound";
@@ -84,6 +84,7 @@ type StoreState = {
   tasksReq: number;
   profile: string;
   init: () => Promise<void>;
+  refreshAll: () => Promise<void>;
   setProfile: (text: string) => Promise<void>;
   openTaskFilter: (q: string) => void;
   clearTaskFilter: () => void;
@@ -226,15 +227,26 @@ export const useStore = create<StoreState>((set, get) => ({
     const p = get().pomo;
     if (p.running) return;
     if (p.mode === "stopwatch") {
+      void cancelFocusNotification();
       set({ pomo: { ...p, running: true, startAt: Date.now() - p.left * 1000, endAt: null } });
       return;
     }
-    set({ pomo: { ...p, running: true, endAt: Date.now() + p.remainMs } });
+    const endAt = Date.now() + p.remainMs;
+    const taskTitle = get().tasks.find((t) => t.id === p.taskId)?.title;
+    const title = p.phase === "focus" ? "Focus session complete! 🎉" : "Break time over! ⚡";
+    const body = taskTitle
+      ? `${taskTitle} — ${p.phase === "focus" ? "Great job, take a break!" : "Ready for your next focus session?"}`
+      : p.phase === "focus"
+        ? "Great job, time to take a break!"
+        : "Ready to focus again?";
+    void scheduleFocusCompletionNotification(title, body, p.remainMs / 1000);
+    set({ pomo: { ...p, running: true, endAt } });
   },
 
   pausePomo: () => {
     const p = get().pomo;
     if (!p.running) return;
+    void cancelFocusNotification();
     if (p.mode === "stopwatch") {
       const elapsed = Math.max(0, Math.round((Date.now() - (p.startAt ?? Date.now())) / 1000));
       set({ pomo: { ...p, running: false, left: elapsed, startAt: null } });
@@ -279,6 +291,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (focusSec > 0 || p.rounds > 0) {
       await get().completePomo(focusSec, 0, Math.max(p.rounds, 1), p.taskId || undefined);
     }
+    void cancelFocusNotification();
     get().resetPomo();
   },
 
@@ -308,6 +321,14 @@ export const useStore = create<StoreState>((set, get) => ({
         next.remainMs = next.focusMin * 1000;
       }
       next.endAt = Date.now() + next.remainMs;
+      const taskTitle = get().tasks.find((t) => t.id === next.taskId)?.title;
+      const title = next.phase === "focus" ? "Focus session complete! 🎉" : "Break time over! ⚡";
+      const body = taskTitle
+        ? `${taskTitle} — ${next.phase === "focus" ? "Great job, take a break!" : "Ready for your next focus session?"}`
+        : next.phase === "focus"
+          ? "Great job, time to take a break!"
+          : "Ready to focus again?";
+      void scheduleFocusCompletionNotification(title, body, next.remainMs / 1000);
       set({ pomo: next });
       setTimeout(() => set((s) => ({ pomo: { ...s.pomo, completing: false } })), 60);
       return;
@@ -327,6 +348,13 @@ export const useStore = create<StoreState>((set, get) => ({
       profile = (await AsyncStorage.getItem("@easytasky/profile")) ?? "";
     } catch {}
     set({ ...data, ready: true, profile });
+    void syncTaskReminders(get().tasks);
+  },
+
+  refreshAll: async () => {
+    const db = await getDb();
+    const data = await loadAll(db);
+    set({ ...data });
     void syncTaskReminders(get().tasks);
   },
 

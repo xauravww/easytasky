@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "../store/useStore";
@@ -45,7 +45,19 @@ export default function TasksScreen() {
     sectionFilter,
     setSectionFilter,
     canCompleteTask,
+    refreshAll,
   } = useStore();
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshAll();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -168,7 +180,18 @@ export default function TasksScreen() {
 
   return (
     <View style={styles.root}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={ACCENT}
+            colors={[ACCENT]}
+          />
+        }
+      >
         <View style={styles.searchWrap}>
           <Ionicons name="search" size={20} color={TAB_IDLE} />
           <TextInput
@@ -178,9 +201,18 @@ export default function TasksScreen() {
             placeholderTextColor={TAB_IDLE}
             style={styles.searchInput}
           />
-          {query.length > 0 && (
+          {query.length > 0 ? (
             <Pressable onPress={() => setQuery("")} hitSlop={8}>
               <Ionicons name="close-circle" size={18} color={TAB_IDLE} />
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={onRefresh}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Refresh tasks"
+            >
+              <Ionicons name="refresh" size={18} color={TAB_IDLE} />
             </Pressable>
           )}
         </View>

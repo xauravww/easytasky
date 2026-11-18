@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import Markdown from "react-native-markdown-display";
@@ -7,7 +7,7 @@ import { aiEnabled, chatWithTools, getAiConfig } from "../lib/aiClient";
 import { helpText, listAgents, parseInvocation, proposalsFromToolCalls } from "../lib/agents";
 import type { BlockProposal } from "../lib/agents";
 import { synthesizeSpeech } from "../lib/talk";
-import { useAudioPlayer } from "expo-audio";
+import { createAudioPlayer } from "expo-audio";
 import CallModeModal from "../components/CallModeModal";
 import { useStore } from "../store/useStore";
 import { dayKey } from "../utils/time";
@@ -88,24 +88,66 @@ export default function AgentScreen() {
   const [settings, setSettings] = useState(false);
   const [aiReady, setAiReady] = useState(aiEnabled());
   const [callOpen, setCallOpen] = useState(false);
-  const [speechUrl, setSpeechUrl] = useState<string | null>(null);
-  const player = useAudioPlayer(speechUrl ? { uri: speechUrl } : undefined);
+  const [callMinimized, setCallMinimized] = useState(false);
+  const [playingMsgIndex, setPlayingMsgIndex] = useState<number | null>(null);
+  const [speakingLoadingIndex, setSpeakingLoadingIndex] = useState<number | null>(null);
+  const activePlayerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
+
+  const stopActiveAudio = () => {
+    if (activePlayerRef.current) {
+      try {
+        activePlayerRef.current.pause();
+        activePlayerRef.current.release();
+      } catch {}
+      activePlayerRef.current = null;
+    }
+    setPlayingMsgIndex(null);
+    setSpeakingLoadingIndex(null);
+  };
 
   useEffect(() => {
-    if (speechUrl && player) {
-      try {
-        player.replace({ uri: speechUrl });
-        player.play();
-      } catch {}
-    }
-  }, [speechUrl, player]);
+    return () => {
+      stopActiveAudio();
+    };
+  }, []);
 
-  const maybeSpeak = async (content: string) => {
+  const toggleSpeakMessage = async (index: number, content: string) => {
+    // If currently playing the same message, stop it
+    if (playingMsgIndex === index) {
+      stopActiveAudio();
+      return;
+    }
+
+    // Stop any previously playing message immediately to avoid voice collision
+    stopActiveAudio();
+
+    setSpeakingLoadingIndex(index);
     try {
       const url = await synthesizeSpeech(content);
-      setSpeechUrl(url);
+      if (!url) {
+        setSpeakingLoadingIndex(null);
+        return;
+      }
+
+      const player = createAudioPlayer(url);
+      activePlayerRef.current = player;
+      setSpeakingLoadingIndex(null);
+      setPlayingMsgIndex(index);
+
+      player.addListener("playbackStatusUpdate", (status: { didJustFinish?: boolean }) => {
+        if (status.didJustFinish) {
+          try {
+            player.release();
+          } catch {}
+          if (activePlayerRef.current === player) {
+            activePlayerRef.current = null;
+            setPlayingMsgIndex(null);
+          }
+        }
+      });
+      player.play();
     } catch {
-      // silent — speech is optional
+      stopActiveAudio();
     }
   };
 
@@ -358,16 +400,13 @@ export default function AgentScreen() {
           const appliedSummary = await executeProposals(proposals);
           const fullContent = `${appliedSummary}${note ? `\n\n${note}` : ""}`;
           setMessages((m) => [...m, { role: "assistant", content: fullContent }]);
-          void maybeSpeak(fullContent);
         } else {
           const content = note ?? "I couldn't plan that change.";
           setMessages((m) => [...m, { role: "assistant", content }]);
-          void maybeSpeak(content);
         }
       } else {
         const content = reply.text ?? "";
         setMessages((m) => [...m, { role: "assistant", content }]);
-        void maybeSpeak(content);
       }
     } catch (e) {
       setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${e instanceof Error ? e.message : "Request failed"}` }]);
@@ -408,6 +447,7 @@ export default function AgentScreen() {
 
   const handleCallClose = useCallback(() => {
     setCallOpen(false);
+    setCallMinimized(false);
   }, []);
 
   const copyMessage = async (content: string) => {
@@ -477,6 +517,30 @@ export default function AgentScreen() {
               <>
                 <Markdown style={mdStyles}>{m.content}</Markdown>
                 <View style={styles.msgActions}>
+                  <Pressable
+                    style={styles.msgAction}
+                    onPress={() => toggleSpeakMessage(i, m.content)}
+                    accessibilityRole="button"
+                    accessibilityLabel={playingMsgIndex === i ? "Stop speaking" : "Speak message"}
+                  >
+                    {speakingLoadingIndex === i ? (
+                      <ActivityIndicator size={12} color={ACCENT} />
+                    ) : (
+                      <Ionicons
+                        name={playingMsgIndex === i ? "stop-circle" : "volume-high-outline"}
+                        size={15}
+                        color={playingMsgIndex === i ? ACCENT : SUB}
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.msgActionText,
+                        playingMsgIndex === i && { color: ACCENT, fontWeight: "700" },
+                      ]}
+                    >
+                      {playingMsgIndex === i ? "Stop" : "Speak"}
+                    </Text>
+                  </Pressable>
                   <Pressable style={styles.msgAction} onPress={() => copyMessage(m.content)} accessibilityRole="button" accessibilityLabel="Copy message">
                     <Ionicons name="copy-outline" size={14} color={SUB} />
                     <Text style={styles.msgActionText}>Copy</Text>
@@ -526,18 +590,55 @@ export default function AgentScreen() {
           onSubmitEditing={send}
         />
         <Pressable
-          style={styles.micBtn}
-          onPress={() => setCallOpen(true)}
+          style={[styles.micBtn, (callOpen && callMinimized) && styles.micBtnActive]}
+          onPress={() => {
+            if (callOpen && callMinimized) {
+              setCallMinimized(false);
+            } else {
+              setCallOpen(true);
+              setCallMinimized(false);
+            }
+          }}
           accessibilityRole="button"
           accessibilityLabel="Start voice call"
         >
-          <Ionicons name="call" size={20} color={ACCENT} />
+          <Ionicons name="call" size={20} color={(callOpen && callMinimized) ? "#FFFFFF" : ACCENT} />
         </Pressable>
         <Pressable style={[styles.sendBtn, busy && { opacity: 0.5 }]} onPress={send} disabled={busy} accessibilityRole="button" accessibilityLabel="Send">
           <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
         </Pressable>
       </View>
-      {callOpen && <CallModeModal onSend={handleCallResult} onClose={handleCallClose} />}
+
+      {/* Floating minimized call indicator if minimized */}
+      {callOpen && callMinimized && (
+        <Pressable
+          style={styles.minimizedCallBar}
+          onPress={() => setCallMinimized(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Restore voice call"
+        >
+          <View style={styles.minimizedPulseDot} />
+          <Ionicons name="call" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={styles.minimizedCallText}>Call in progress · Tap to maximize</Text>
+          <Pressable
+            style={styles.minimizedHangup}
+            onPress={handleCallClose}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Hang up call"
+          >
+            <Ionicons name="close" size={18} color="#FFFFFF" />
+          </Pressable>
+        </Pressable>
+      )}
+
+      {callOpen && !callMinimized && (
+        <CallModeModal
+          onSend={handleCallResult}
+          onClose={handleCallClose}
+          onMinimize={() => setCallMinimized(true)}
+        />
+      )}
     </View>
   );
 }
@@ -612,5 +713,46 @@ const styles = StyleSheet.create({
   },
   sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: BUBBLE_ME, alignItems: "center", justifyContent: "center" },
   micBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: ACCENT, alignItems: "center", justifyContent: "center" },
+  micBtnActive: { backgroundColor: ACCENT },
   talkBtnOn: { backgroundColor: ACCENT },
+  minimizedCallBar: {
+    position: "absolute",
+    top: 54,
+    left: 16,
+    right: 16,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#1C1C1C",
+    borderWidth: 1.5,
+    borderColor: ACCENT,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  minimizedPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: ACCENT,
+    marginRight: 10,
+  },
+  minimizedCallText: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  minimizedHangup: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#E5484D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });
