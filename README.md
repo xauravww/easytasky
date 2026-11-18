@@ -4,6 +4,7 @@
 [![Free](https://img.shields.io/badge/Price-100%25%20Free-FA6E1E?style=for-the-badge)](#-100-free-policy)
 [![VirusTotal](https://img.shields.io/badge/VirusTotal-Clean%20(0%20Detections)-brightgreen?style=for-the-badge)](https://www.virustotal.com/gui/file/db8a5895ad4949cf126ff610090ca2f4601ecb18ea99d8608d9340a9252a2807)
 [![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-blue?style=for-the-badge)](https://github.com/xauravww/easytasky/releases/latest)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-yellow?style=for-the-badge&logo=buy-me-a-coffee)](https://buymeacoffee.com/xauravww)
 [![License](https://img.shields.io/badge/Status-Actively%20Maintained-success?style=for-the-badge)](#-open-source--privacy)
 
 EasyTasky is a high-performance, mobile-first task, habit, and time-planning application built with React Native and native Android architecture. It features Eisenhower matrix prioritization, 52-week streak heatmaps, multi-count habit trackers with customizable units, deep focus stopwatch/Pomodoro sessions, an autonomous voice-enabled AI companion with full app and database control, completion chimes, and a built-in in-app auto-updater. Completely offline-capable, ad-free, and private.
@@ -14,7 +15,7 @@ EasyTasky is a high-performance, mobile-first task, habit, and time-planning app
 
 Below is a direct tour of EasyTasky's core interface, captured from active mobile productivity sessions on Android.
 
-| 📋 Tasks & Matrix Priorities | 📂 Category & Section Drawer | 🎙️ AI Agent Chat & Actions | 📞 Real-Time Voice Call Mode |
+| 📋 Tasks & Matrix Priorities | 📂 Task Section Drawer | ⚙️ Configurations | 📞 Real-Time Voice Call Mode |
 | :---: | :---: | :---: | :---: |
 | <img src="screenshots/feature_tasks.png" width="220" alt="Tasks Screen" /> | <img src="screenshots/feature_sidebar.png" width="220" alt="Category Sidebar" /> | <img src="screenshots/feature_agent.png" width="220" alt="AI Agent Companion" /> | <img src="screenshots/feature_call_mode.png" width="220" alt="Voice Call Mode" /> |
 
@@ -22,11 +23,11 @@ Below is a direct tour of EasyTasky's core interface, captured from active mobil
 | :---: | :---: | :---: | :---: |
 | <img src="screenshots/feature_habits.png" width="220" alt="Habits Screen" /> | <img src="screenshots/feature_habit_detail.png" width="220" alt="Annual Streak Heatmap" /> | <img src="screenshots/feature_focus.png" width="220" alt="Focus Timer" /> | <img src="screenshots/feature_focus_running.png" width="220" alt="Live Focus Session" /> |
 
-| 📈 Performance & Velocity | 🗓️ 52-Week Review Heatmap | 🧭 4-Quadrant Eisenhower | ⏱️ Timebox & Buffer Schedule |
+| 📈 Review & Velocity | 🗓️ 52-Week Review Heatmap | 🎯 CEO-Like Planner | 🧭 4-Quadrant Eisenhower |
 | :---: | :---: | :---: | :---: |
 | <img src="screenshots/feature_review.png" width="220" alt="Review & Velocity" /> | <img src="screenshots/feature_review_heatmap.png" width="220" alt="52-Week Velocity Heatmap" /> | <img src="screenshots/feature_eisenhower.png" width="220" alt="Eisenhower Matrix" /> | <img src="screenshots/feature_timebox.png" width="220" alt="Timeboxing Tool" /> |
 
-| 🎯 3-3-3 Focus Day Planner | 📓 Next-Day Notebook | 🌙 Evening Shutdown Ritual | 📲 In-App Auto-Updater |
+| ⏱️ Timeblocks | 📓 Next-Day Notebook | 📦 Archived Tasks | 🎚️ Moving Slider |
 | :---: | :---: | :---: | :---: |
 | <img src="screenshots/feature_333_plan.png" width="220" alt="3-3-3 Focus Planner" /> | <img src="screenshots/feature_nextday_notebook.png" width="220" alt="Next-Day Notebook" /> | <img src="screenshots/feature_shutdown.png" width="220" alt="Shutdown Ritual" /> | <img src="screenshots/feature_updater.png" width="220" alt="In-App Auto-Updater" /> |
 
@@ -156,6 +157,14 @@ Output binary: `android/app/build/outputs/apk/release/app-release.apk`
 - **Zero Third-Party Telemetry**: No trackers, no ad networks, no session recorders.
 - **Local History Snapshotting**: Task modification history is stored locally for 7 days with automatic daily pruning.
 - **JSON Backup & Restore**: Export your entire database as a single portable JSON file anytime.
+
+---
+
+## ☕ Support the Project
+
+If EasyTasky helps you stay focused and organized, consider supporting its development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/xauravww)
 
 ---
 
