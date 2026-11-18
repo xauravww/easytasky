@@ -18,6 +18,7 @@ import SettingsModal from "./src/components/SettingsModal";
 import NextDayPlanTool from "./src/components/NextDayPlanTool";
 import ShutdownRitualTool from "./src/components/ShutdownRitualTool";
 import ArchivedTasksTool from "./src/components/ArchivedTasksTool";
+import UpdateBanner from "./src/components/UpdateBanner";
 
 
 type TabKey = "tasks" | "chat" | "focus" | "habits" | "extras";
@@ -121,6 +122,9 @@ export default function App() {
 
             {/* Draggable Sliding Drawer Handle (Item 1) */}
             <SlidingDrawer onSelectOption={(opt) => setActiveModal(opt)} />
+
+            {/* In-App Auto-Update Banner */}
+            <UpdateBanner />
 
             {/* Drawer Sub-Modals */}
             <SectionsManagerModal
