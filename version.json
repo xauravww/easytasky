@@ -1,6 +1,6 @@
 {
-  "version": "1.0.2",
-  "versionCode": 3,
+  "version": "1.0.3",
+  "versionCode": 4,
   "downloadUrl": "https://github.com/xauravww/easytasky/releases/latest/download/app-release.apk",
-  "changelog": "• Minimized call overlay to navigate tasks during voice calls\n• Always On Screen mode & background timer alerts in Focus\n• Speak aloud & collision-free audio playback for AI chat\n• Quick refresh buttons and pull-to-refresh on all lists"
+  "changelog": "• Inline schedule editor with quick dates and reminder times\n• Persistent AI agent sessions with history panel\n• Verified agent actions across habits, rituals and focus timers\n• Keyboard-aware sheets and smoother virtualized lists"
 }
