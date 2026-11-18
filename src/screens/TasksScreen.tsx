@@ -170,31 +170,22 @@ export default function TasksScreen() {
           </Pressable>
         )}
 
-        {/* Section / Category Filter Chips */}
-        {sections.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sectionChipsScroll}>
+        {/* Active Category Indicator (Filtered from Sidebar Drawer) */}
+        {sectionFilter && (() => {
+          const activeSec = sections.find((s) => s.id === sectionFilter);
+          return (
             <Pressable
-              style={[styles.sectionChip, sectionFilter === null && styles.sectionChipActive]}
+              style={styles.filterChip}
               onPress={() => setSectionFilter(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Clear category filter"
             >
-              <Text style={[styles.sectionChipText, sectionFilter === null && styles.sectionChipTextActive]}>
-                All
-              </Text>
+              <View style={[styles.sectionChipDot, { backgroundColor: activeSec?.color || ACCENT }]} />
+              <Text style={styles.filterText}>Category: {activeSec?.name || "Filtered"}</Text>
+              <Ionicons name="close-circle" size={16} color={TAB_IDLE} />
             </Pressable>
-            {sections.map((sec) => (
-              <Pressable
-                key={sec.id}
-                style={[styles.sectionChip, sectionFilter === sec.id && styles.sectionChipActive]}
-                onPress={() => setSectionFilter(sectionFilter === sec.id ? null : sec.id)}
-              >
-                <View style={[styles.sectionChipDot, { backgroundColor: sec.color }]} />
-                <Text style={[styles.sectionChipText, sectionFilter === sec.id && styles.sectionChipTextActive]}>
-                  {sec.name}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        )}
+          );
+        })()}
 
         {groups.overdue.length > 0 && (
           <>
