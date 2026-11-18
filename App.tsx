@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { NavigationBar } from "expo-navigation-bar";
-import { COLORS, Spinner } from "./src/components/ui";
+import { COLORS } from "./src/components/ui";
 import { useStore } from "./src/store/useStore";
 import TasksScreen from "./src/screens/TasksScreen";
 import AgentScreen from "./src/screens/AgentScreen";
@@ -85,11 +85,7 @@ export default function App() {
   };
 
   if (!ready) {
-    return (
-      <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
-        <Spinner />
-      </View>
-    );
+    return <View style={{ flex: 1, backgroundColor: "#141414" }} />;
   }
 
   return (
