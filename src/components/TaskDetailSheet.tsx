@@ -8,6 +8,7 @@ import { fmtDue } from "../utils/taskFormat";
 import { dayKey } from "../utils/time";
 import { useStore } from "../store/useStore";
 import CustomTimePicker from "./CustomTimePicker";
+import SearchablePickerModal from "./SearchablePickerModal";
 
 const SHEET = "#1A1A1A";
 const FIELD_BG = "#1E1E1E";
@@ -65,6 +66,8 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
   const [subInput, setSubInput] = useState("");
   const [editingNote, setEditingNote] = useState(!task.note);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showDependencyPicker, setShowDependencyPicker] = useState(false);
 
   // Dependency system
   const taskDeps = dependencies.filter((d) => d.task_id === task.id);
@@ -247,34 +250,51 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
               ))}
             </View>
 
-            {/* Section / Category selector */}
-            {sections.length > 0 && (
-              <>
-                <Text style={styles.label}>Category</Text>
-                <View style={styles.chipRow}>
-                  <Pressable
-                    style={[styles.chip, sectionId === null && styles.chipActive]}
-                    onPress={() => { setSectionId(null); updateTask(task.id, { section_id: null }); }}
-                    accessibilityRole="button"
-                  >
-                    <Text style={[styles.chipText, sectionId === null && styles.chipTextActive]}>None</Text>
-                  </Pressable>
-                  {sections.map((sec) => (
-                    <Pressable
-                      key={sec.id}
-                      style={[styles.chip, sectionId === sec.id && styles.chipActive]}
-                      onPress={() => { setSectionId(sec.id); updateTask(task.id, { section_id: sec.id }); }}
-                      accessibilityRole="button"
-                    >
-                      <View style={[styles.energyDot, { backgroundColor: sec.color }]} />
-                      <Text style={[styles.chipText, sectionId === sec.id && styles.chipTextActive]}>
-                        {sec.name}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </>
-            )}
+            {/* Section / Category selector with Searchable Picker */}
+            <Text style={styles.label}>Category</Text>
+            <View style={styles.chipRow}>
+              <Pressable
+                style={[styles.chip, sectionId !== null && styles.chipActive]}
+                onPress={() => setShowCategoryPicker(true)}
+                accessibilityRole="button"
+              >
+                {(() => {
+                  const currentSec = sections.find((s) => s.id === sectionId);
+                  if (currentSec) {
+                    return (
+                      <>
+                        <View style={[styles.energyDot, { backgroundColor: currentSec.color }]} />
+                        <Text style={[styles.chipText, styles.chipTextActive]}>
+                          {currentSec.name}
+                        </Text>
+                        <Ionicons name="chevron-down" size={14} color={ACCENT} style={{ marginLeft: 4 }} />
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <Ionicons name="folder-outline" size={15} color={SUB} />
+                      <Text style={styles.chipText}>Select Category</Text>
+                      <Ionicons name="chevron-down" size={14} color={SUB} style={{ marginLeft: 4 }} />
+                    </>
+                  );
+                })()}
+              </Pressable>
+
+              {sectionId !== null && (
+                <Pressable
+                  style={styles.chip}
+                  onPress={() => {
+                    setSectionId(null);
+                    updateTask(task.id, { section_id: null });
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="close-circle" size={15} color={SUB} />
+                  <Text style={styles.chipText}>Clear</Text>
+                </Pressable>
+              )}
+            </View>
 
             {/* Custom Time Picker Remind Setting (Item 16) */}
             {task.due_date && (
@@ -308,7 +328,7 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
               </>
             )}
 
-            {/* Task Dependency System (Item 17) */}
+            {/* Task Dependency System with Searchable Picker */}
             <Text style={styles.label}>Dependencies (Prerequisites)</Text>
             {blockerTasks.length > 0 ? (
               <View style={styles.depList}>
@@ -343,29 +363,19 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
               <Text style={styles.depEmptyText}>No prerequisite dependencies set.</Text>
             )}
 
-            {/* Add dependency picker */}
-            {candidateDeps.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-                <View style={styles.chipRow}>
-                  {candidateDeps
-                    .filter((c) => !blockerTasks.some((b) => b.id === c.id))
-                    .slice(0, 8)
-                    .map((c) => (
-                      <Pressable
-                        key={c.id}
-                        style={styles.chip}
-                        onPress={() => addDependency(task.id, c.id)}
-                        accessibilityRole="button"
-                      >
-                        <Ionicons name="link-outline" size={13} color={SUB} />
-                        <Text style={styles.chipText} numberOfLines={1}>
-                          + Depends on: {c.title}
-                        </Text>
-                      </Pressable>
-                    ))}
-                </View>
-              </ScrollView>
-            )}
+            {/* Add Dependency Search Button */}
+            <View style={{ marginTop: 8 }}>
+              <Pressable
+                style={styles.chip}
+                onPress={() => setShowDependencyPicker(true)}
+                accessibilityRole="button"
+              >
+                <Ionicons name="add-circle-outline" size={16} color={ACCENT} />
+                <Text style={[styles.chipText, { color: ACCENT, fontWeight: "700" }]}>
+                  Add Prerequisite Dependency…
+                </Text>
+              </Pressable>
+            </View>
 
             <View style={styles.divider} />
 
@@ -425,6 +435,48 @@ export default function TaskDetailSheet({ task, onClose }: Props) {
           setShowTimePicker(false);
         }}
         onClose={() => setShowTimePicker(false)}
+      />
+
+      {/* Category Searchable Picker */}
+      <SearchablePickerModal
+        visible={showCategoryPicker}
+        title="Select Category"
+        placeholder="Search categories..."
+        items={sections.map((s) => ({
+          id: s.id,
+          title: s.name,
+          color: s.color,
+        }))}
+        selectedId={sectionId}
+        onSelect={(item) => {
+          const newId = item ? item.id : null;
+          setSectionId(newId);
+          updateTask(task.id, { section_id: newId });
+        }}
+        onClose={() => setShowCategoryPicker(false)}
+      />
+
+      {/* Dependency Searchable Picker */}
+      <SearchablePickerModal
+        visible={showDependencyPicker}
+        title="Add Prerequisite Dependency"
+        placeholder="Search tasks..."
+        items={candidateDeps
+          .filter((c) => !blockerTasks.some((b) => b.id === c.id))
+          .map((c) => ({
+            id: c.id,
+            title: c.title,
+            subtitle: c.due_date ? `Due: ${c.due_date}` : undefined,
+            icon: c.status === "done" ? "checkmark-circle-outline" : "ellipse-outline",
+          }))}
+        selectedId={null}
+        allowClear={false}
+        onSelect={(item) => {
+          if (item) {
+            addDependency(task.id, item.id);
+          }
+        }}
+        onClose={() => setShowDependencyPicker(false)}
       />
     </Modal>
   );

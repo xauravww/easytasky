@@ -8,6 +8,7 @@ import { fmtDue } from "../utils/taskFormat";
 import type { Task } from "../db/database";
 import { aiEnabled, parseTaskToForm } from "../lib/aiClient";
 import TaskDetailSheet from "../components/TaskDetailSheet";
+import SearchablePickerModal from "../components/SearchablePickerModal";
 
 const BG = "#141414";
 const SEARCH_BG = "#2E2E2E";
@@ -51,6 +52,8 @@ export default function TasksScreen() {
   const [title, setTitle] = useState("");
   const [quadrant, setQuadrant] = useState("urgent_important");
   const [energy, setEnergy] = useState<Task["energy"]>("medium");
+  const [addingSectionId, setAddingSectionId] = useState<string | null>(null);
+  const [showAddCategoryPicker, setShowAddCategoryPicker] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseErr, setParseErr] = useState("");
@@ -97,8 +100,17 @@ export default function TasksScreen() {
 
   const submit = () => {
     if (!title.trim()) return;
-    addTask({ title: title.trim(), quadrant, energy, status: "inbox", due_date: dayKey(), estimated_min: suggested });
+    addTask({
+      title: title.trim(),
+      quadrant,
+      energy,
+      status: "inbox",
+      due_date: dayKey(),
+      estimated_min: suggested,
+      section_id: addingSectionId || sectionFilter || undefined,
+    });
     setTitle("");
+    setAddingSectionId(null);
     setAdding(false);
   };
 
@@ -257,6 +269,54 @@ export default function TasksScreen() {
                   </Pressable>
                 ))}
               </View>
+
+              {/* Dynamic Category Selector */}
+              {sections.length > 0 && (
+                <>
+                  <Text style={styles.fieldLabel}>Category</Text>
+                  <View style={styles.chipRow}>
+                    <Pressable
+                      style={[styles.chip, addingSectionId !== null && styles.chipActive]}
+                      onPress={() => setShowAddCategoryPicker(true)}
+                      accessibilityRole="button"
+                    >
+                      {(() => {
+                        const targetId = addingSectionId || sectionFilter;
+                        const currentSec = sections.find((s) => s.id === targetId);
+                        if (currentSec) {
+                          return (
+                            <>
+                              <View style={[styles.sectionChipDot, { backgroundColor: currentSec.color }]} />
+                              <Text style={[styles.chipText, styles.chipTextActive]}>
+                                {currentSec.name}
+                              </Text>
+                              <Ionicons name="chevron-down" size={14} color={ACCENT} style={{ marginLeft: 4 }} />
+                            </>
+                          );
+                        }
+                        return (
+                          <>
+                            <Ionicons name="folder-outline" size={15} color={TAB_IDLE} />
+                            <Text style={styles.chipText}>Select Category</Text>
+                            <Ionicons name="chevron-down" size={14} color={TAB_IDLE} style={{ marginLeft: 4 }} />
+                          </>
+                        );
+                      })()}
+                    </Pressable>
+
+                    {addingSectionId !== null && (
+                      <Pressable
+                        style={styles.chip}
+                        onPress={() => setAddingSectionId(null)}
+                        accessibilityRole="button"
+                      >
+                        <Ionicons name="close-circle" size={15} color={TAB_IDLE} />
+                        <Text style={styles.chipText}>Clear</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                </>
+              )}
               {aiEnabled() && (
                 <Pressable style={styles.parseBtn} onPress={runParse} disabled={parsing} accessibilityRole="button">
                   <Ionicons name="sparkles-outline" size={16} color={ACCENT} />
@@ -276,6 +336,23 @@ export default function TasksScreen() {
       </Modal>
 
       {editing && <TaskDetailSheet task={editing} onClose={() => setEditing(null)} />}
+
+      {/* Add Task Category Searchable Picker */}
+      <SearchablePickerModal
+        visible={showAddCategoryPicker}
+        title="Select Category"
+        placeholder="Search categories..."
+        items={sections.map((s) => ({
+          id: s.id,
+          title: s.name,
+          color: s.color,
+        }))}
+        selectedId={addingSectionId || sectionFilter}
+        onSelect={(item) => {
+          setAddingSectionId(item ? item.id : null);
+        }}
+        onClose={() => setShowAddCategoryPicker(false)}
+      />
     </View>
   );
 }
