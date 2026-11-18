@@ -5,6 +5,7 @@ import { habitStreak, useStore } from "../store/useStore";
 import { addDays, dayKey } from "../utils/time";
 import type { Task } from "../db/database";
 import HabitDetailModal from "../components/HabitDetailModal";
+import HabitQuantityModal from "../components/HabitQuantityModal";
 
 const BG = "#141414";
 const CARD = "#1A1A1A";
@@ -18,7 +19,7 @@ const PALETTE = ["#E5484D", "#D8B62E", "#4CC3E8", "#12B76A", "#8B5CF6"];
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
 export default function HabitsScreen() {
-  const { tasks, habitChecks, addTask, deleteTask, toggleHabit } = useStore();
+  const { tasks, habitChecks, addTask, deleteTask, toggleHabit, logHabitValue } = useStore();
 
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
@@ -29,6 +30,7 @@ export default function HabitsScreen() {
   const [targetValue, setTargetValue] = useState("1");
   const [unit, setUnit] = useState("times");
   const [selectedHabit, setSelectedHabit] = useState<Task | null>(null);
+  const [qtyModalHabit, setQtyModalHabit] = useState<{ habit: Task; currentVal: number } | null>(null);
 
   const habits = tasks.filter((t) => t.is_habit === 1);
   const today = dayKey();
@@ -56,6 +58,8 @@ export default function HabitsScreen() {
   const submit = () => {
     if (!title.trim()) return;
     const num = parseFloat(targetValue);
+    const validNum = isNaN(num) || num <= 0 ? 1 : num;
+    const finalType = validNum > 1 || habitType === "quantity" ? "quantity" : "boolean";
     addTask({
       title: title.trim(),
       status: "habit",
@@ -63,9 +67,9 @@ export default function HabitsScreen() {
       habit_freq: freq,
       habit_days: freq === "weekly" ? days.join(",") : null,
       habit_color: color,
-      habit_type: habitType,
-      habit_target_value: habitType === "quantity" ? (isNaN(num) || num <= 0 ? 1 : num) : 1,
-      habit_unit: habitType === "quantity" ? unit.trim() || "units" : "times",
+      habit_type: finalType,
+      habit_target_value: validNum,
+      habit_unit: finalType === "quantity" ? unit.trim() || "times" : "times",
     });
     setTitle("");
     setAdding(false);
@@ -229,9 +233,18 @@ export default function HabitsScreen() {
         const streak = habitStreak(habitChecks, h.id);
         const checkedToday = habitChecks.some((c) => c.habit_id === h.id && c.day === today);
         const habitColor = h.habit_color ?? ACCENT;
-        const isQty = h.habit_type === "quantity";
+        const targetValNum = h.habit_target_value ?? 1;
+        const isQty = h.habit_type === "quantity" || targetValNum > 1;
         const todayCheck = habitChecks.find((c) => c.habit_id === h.id && c.day === today);
         const currentQty = todayCheck?.value ?? (checkedToday ? 1 : 0);
+
+        const handleCheckPress = () => {
+          if (isQty) {
+            setQtyModalHabit({ habit: h, currentVal: currentQty });
+          } else {
+            toggleHabit(h.id, today);
+          }
+        };
 
         return (
           <Pressable
@@ -246,7 +259,7 @@ export default function HabitsScreen() {
                 checkedToday && { backgroundColor: habitColor, borderColor: habitColor },
                 pressed && { opacity: 0.6 },
               ]}
-              onPress={() => toggleHabit(h.id, today)}
+              onPress={handleCheckPress}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: checkedToday }}
               accessibilityLabel={`Check in ${h.title}`}
@@ -262,7 +275,7 @@ export default function HabitsScreen() {
                 <Text style={styles.streakText}>{streak} day streak</Text>
                 {isQty ? (
                   <Text style={[styles.freqText, { color: ACCENT, fontWeight: "600" }]}>
-                    · {currentQty}/{h.habit_target_value || 1} {h.habit_unit || "units"}
+                    · {currentQty}/{targetValNum} {h.habit_unit || "times"}
                   </Text>
                 ) : null}
                 {h.habit_freq === "weekly" && h.habit_days ? (
@@ -296,6 +309,17 @@ export default function HabitsScreen() {
       <HabitDetailModal
         habit={selectedHabit}
         onClose={() => setSelectedHabit(null)}
+      />
+    )}
+
+    {qtyModalHabit && (
+      <HabitQuantityModal
+        habit={qtyModalHabit.habit}
+        currentValue={qtyModalHabit.currentVal}
+        onSave={async (val) => {
+          await logHabitValue(qtyModalHabit.habit.id, today, val);
+        }}
+        onClose={() => setQtyModalHabit(null)}
       />
     )}
     </View>

@@ -118,20 +118,38 @@ export default function AgentScreen() {
     const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
     const openTasks = state.tasks.filter((t) => t.status !== "done" && t.status !== "habit");
     const todayBlocks = state.blocks.filter((b) => b.day === today).sort((a, b) => a.start_min - b.start_min);
+    const habits = state.tasks.filter((t) => t.is_habit === 1);
+    const sections = state.sections;
+
     const parts: string[] = [];
-    parts.push("This is the user's CURRENT ACTUAL data. It is authoritative — do not invent or describe anything missing from it.");
+    parts.push("This is the user's CURRENT ACTUAL data in EasyTasky. You have full access and direct control over all of it.");
     if (state.profile.trim()) {
       parts.push(`About the user (their own words):\n${state.profile.trim()}`);
     }
+    if (sections.length) {
+      parts.push(`Categories / Sections:\n${sections.map((s) => `- ${s.name}`).join("\n")}`);
+    }
     if (openTasks.length) {
-      const shown = openTasks.slice(0, 12).map((t) => `- ${t.title}${t.due_date ? ` (due ${t.due_date})` : ""}`);
+      const shown = openTasks.slice(0, 20).map((t) => `- [${t.status}] ${t.title}${t.due_date ? ` (due ${t.due_date})` : ""}${t.quadrant ? ` (${t.quadrant})` : ""}`);
       parts.push(`Open tasks:\n${shown.join("\n")}`);
+    }
+    if (habits.length) {
+      const shownHabits = habits.map((h) => {
+        const check = state.habitChecks.find((c) => c.habit_id === h.id && c.day === today);
+        const val = check?.value ?? (check ? 1 : 0);
+        return `- ${h.title} (type: ${h.habit_type || "boolean"}, today: ${val}/${h.habit_target_value || 1} ${h.habit_unit || "times"})`;
+      });
+      parts.push(`Habits:\n${shownHabits.join("\n")}`);
     }
     if (todayBlocks.length) {
       const shown = todayBlocks.map((b) => `- ${fmt24(b.start_min)}-${fmt24(b.end_min)} ${b.label} (${b.type})`);
       parts.push(`Today's time blocks:\n${shown.join("\n")}`);
     } else {
       parts.push("Today's time blocks: (none)");
+    }
+    const note = state.getDailyNote(today);
+    if (note.trim()) {
+      parts.push(`Today's note/journal:\n${note.trim()}`);
     }
     return parts.join("\n\n");
   };
@@ -140,35 +158,109 @@ export default function AgentScreen() {
     const state = useStore.getState();
     const applied: string[] = [];
     const fmt24 = (min: number) => `${Math.floor(min / 60)}:${`${min % 60}`.padStart(2, "0")}`;
+    const today = dayKey();
+
     for (const p of proposals) {
       if (p.kind === "addBlock") {
         await state.addBlock(p.block);
-        applied.push(`added "${p.block.label}" ${fmt24(p.block.start_min)}-${fmt24(p.block.end_min)}`);
+        applied.push(`added time block "${p.block.label}" ${fmt24(p.block.start_min)}-${fmt24(p.block.end_min)}`);
       } else if (p.kind === "updateBlock") {
         const b = state.blocks.find((x) => x.id === p.id);
         await state.updateBlock(p.id, p.patch);
-        applied.push(`updated "${b?.label ?? "#" + p.id}"`);
+        applied.push(`updated time block "${b?.label ?? "#" + p.id}"`);
       } else if (p.kind === "deleteBlock") {
         const b = state.blocks.find((x) => x.id === p.id);
         await state.deleteBlock(p.id);
-        applied.push(`removed "${b?.label ?? "#" + p.id}"`);
+        applied.push(`removed time block "${b?.label ?? "#" + p.id}"`);
       } else if (p.kind === "createSection") {
         await state.addSection(p.name, p.color);
-        applied.push(`created section "${p.name}"`);
+        applied.push(`created category "${p.name}"`);
       } else if (p.kind === "deleteSection") {
         const sec = state.sections.find((s) => s.name.toLowerCase() === p.name.toLowerCase());
         if (sec) {
           await state.deleteSection(sec.id);
-          applied.push(`deleted section "${p.name}"`);
+          applied.push(`deleted category "${p.name}"`);
         }
+      } else if (p.kind === "addTask") {
+        let secId: string | undefined;
+        if (p.task.section_name) {
+          const sec = state.sections.find((s) => s.name.toLowerCase() === p.task.section_name?.toLowerCase());
+          if (sec) secId = sec.id;
+        }
+        await state.addTask({
+          title: p.task.title,
+          context: p.task.context,
+          energy: p.task.energy as any,
+          quadrant: p.task.quadrant as any,
+          due_date: p.task.due_date,
+          estimated_min: p.task.estimated_min,
+          note: p.task.note,
+          section_id: secId,
+        });
+        applied.push(`created task "${p.task.title}"`);
+      } else if (p.kind === "updateTask") {
+        const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.find.toLowerCase()));
+        if (t) {
+          await state.updateTask(t.id, p.patch as any);
+          applied.push(`updated task "${t.title}"`);
+        }
+      } else if (p.kind === "deleteTask") {
+        const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.find.toLowerCase()));
+        if (t) {
+          await state.deleteTask(t.id);
+          applied.push(`deleted task "${t.title}"`);
+        }
+      } else if (p.kind === "completeTask") {
+        const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.find.toLowerCase()));
+        if (t) {
+          await state.updateTask(t.id, { status: "done" });
+          applied.push(`completed task "${t.title}"`);
+        }
+      } else if (p.kind === "addSubtask") {
+        const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.taskFind.toLowerCase()));
+        if (t) {
+          await state.addSubtask(t.id, p.title);
+          applied.push(`added subtask "${p.title}" to "${t.title}"`);
+        }
+      } else if (p.kind === "toggleSubtask") {
+        const st = state.subtasks.find((s) => s.title.toLowerCase().includes(p.subtaskTitle.toLowerCase()));
+        if (st) {
+          await state.toggleSubtask(st.id);
+          applied.push(`toggled subtask "${st.title}"`);
+        }
+      } else if (p.kind === "addHabit") {
+        const isQ = p.habit.habit_type === "quantity" || (p.habit.target_value ?? 1) > 1;
+        await state.addTask({
+          title: p.habit.title,
+          status: "habit",
+          is_habit: 1,
+          habit_type: isQ ? "quantity" : "boolean",
+          habit_target_value: p.habit.target_value ?? 1,
+          habit_unit: p.habit.unit ?? (isQ ? "times" : undefined),
+          habit_color: p.habit.color ?? "#FA6E1E",
+          habit_freq: p.habit.freq ?? "daily",
+        });
+        applied.push(`created habit "${p.habit.title}"`);
+      } else if (p.kind === "logHabit") {
+        const h = state.tasks.find((x) => x.is_habit === 1 && x.title.toLowerCase().includes(p.find.toLowerCase()));
+        if (h) {
+          await state.logHabitValue(h.id, today, p.value);
+          applied.push(`logged ${p.value} for habit "${h.title}"`);
+        }
+      } else if (p.kind === "saveDailyNote") {
+        const noteDay = p.day || today;
+        await state.saveDailyNote(noteDay, p.content);
+        applied.push(`saved daily note for ${noteDay}`);
+      } else if (p.kind === "updateUserProfile") {
+        await state.setProfile(p.profile);
+        applied.push(`updated your profile information`);
       }
     }
-    const today = dayKey();
-    const now = useStore.getState().blocks.filter((b) => b.day === today).sort((a, b) => a.start_min - b.start_min);
-    const sched = now.length
-      ? now.map((b) => `${fmt24(b.start_min)}-${fmt24(b.end_min)}  ${b.label} (${b.type})`).join("\n")
-      : "(no blocks remain today)";
-    return `Applied changes to your schedule:\n${applied.map((a) => `• ${a}`).join("\n")}\n\nToday now:\n${sched}`;
+
+    if (!applied.length) {
+      return "Done.";
+    }
+    return `Completed:\n${applied.map((a) => `• ${a}`).join("\n")}`;
   };
 
   const submit = async (text: string, base: Msg[]) => {

@@ -13,10 +13,10 @@ const HEYGEN_TTS_URL = "https://api.heygen.com/v3/models/audio/tts";
 const HEYGEN_TTS_STREAM_URL = "https://api.heygen.com/v3/models/audio/tts/stream";
 
 export const VOICE_OPTIONS = [
-  { id: "232a89926fca44fc9c8ba2e0f90064f4", name: "Kavya (Indian English / Hindi)", lang: "hi-IN" },
-  { id: "4e79dcb0af2c4d07a5bf5db075884257", name: "Araj (Indian Male)", lang: "hi-IN" },
-  { id: "f03273ea4c5b42d2ad8d05065747a217", name: "Peppy Priya (Indian Friendly)", lang: "hi-IN" },
-  { id: "83548de556df48ba8c09c42a57c51d85", name: "Nadine (Global English)", lang: "en-US" },
+  { id: "232a89926fca44fc9c8ba2e0f90064f4", name: "Kavya (Indian English / Hindi)", lang: "hi-IN", gender: "female" as const },
+  { id: "4e79dcb0af2c4d07a5bf5db075884257", name: "Araj (Indian Male)", lang: "hi-IN", gender: "male" as const },
+  { id: "f03273ea4c5b42d2ad8d05065747a217", name: "Peppy Priya (Indian Friendly)", lang: "hi-IN", gender: "female" as const },
+  { id: "83548de556df48ba8c09c42a57c51d85", name: "Nadine (Global English)", lang: "en-US", gender: "female" as const },
 ];
 
 const DEFAULT_VOICE = "232a89926fca44fc9c8ba2e0f90064f4"; // Kavya (Indian)
@@ -38,6 +38,11 @@ export const loadHeyGenKey = async (): Promise<void> => {
 
 export const getHeyGenKey = (): string => heygenKey;
 export const getSelectedVoice = (): string => selectedVoiceId;
+export const getSelectedVoiceInfo = (): { id: string; name: string; lang: string; gender: "male" | "female" } => {
+  const opt = VOICE_OPTIONS.find((v) => v.id === selectedVoiceId);
+  if (opt) return opt;
+  return { id: DEFAULT_VOICE, name: "Kavya", lang: "hi-IN", gender: "female" };
+};
 export const getSpeechLang = (): string => selectedSpeechLang;
 
 export const saveHeyGenKey = async (key: string): Promise<void> => {

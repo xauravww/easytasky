@@ -18,6 +18,7 @@ import { dayKey, uid } from "../utils/time";
 import { syncTaskReminders } from "../lib/notifications";
 import { loadAiConfig } from "../lib/aiClient";
 import { loadHeyGenKey } from "../lib/talk";
+import { playCompletionSound } from "../utils/sound";
 
 // Next due date for a repeat rule, given today's due key ("" when none applies).
 const nextDueFor = (rule: string, from: string): string | null => {
@@ -346,6 +347,7 @@ export const useStore = create<StoreState>((set, get) => ({
       await db.runAsync("INSERT OR REPLACE INTO habit_checks (habit_id, day, value) VALUES (?,?,?)", [habitId, day, value]);
       const checks = await db.getAllAsync<HabitCheck>("SELECT * FROM habit_checks ORDER BY day");
       set({ habitChecks: mapRows(checks) });
+      void playCompletionSound();
     }
   },
 
@@ -358,6 +360,7 @@ export const useStore = create<StoreState>((set, get) => ({
       await db.runAsync("INSERT OR REPLACE INTO habit_checks (habit_id, day, value) VALUES (?,?,?)", [habitId, day, value]);
       const checks = await db.getAllAsync<HabitCheck>("SELECT * FROM habit_checks ORDER BY day");
       set({ habitChecks: mapRows(checks) });
+      void playCompletionSound();
     }
   },
 
@@ -420,6 +423,9 @@ export const useStore = create<StoreState>((set, get) => ({
     );
     set({ tasks: get().tasks.map((t) => (t.id === id ? next : t)) });
     void syncTaskReminders(get().tasks);
+    if (next.status === "done" && cur.status !== "done") {
+      void playCompletionSound();
+    }
 
     // Recurring: completing an open, repeating task spawns the next instance.
     if (next.status === "done" && cur.status !== "done" && next.repeat_rule && next.due_date) {
@@ -496,6 +502,9 @@ export const useStore = create<StoreState>((set, get) => ({
     const done = cur.done ? 0 : 1;
     await db.runAsync("UPDATE subtasks SET done=? WHERE id=?", [done, id]);
     set({ subtasks: get().subtasks.map((s) => (s.id === id ? { ...s, done } : s)) });
+    if (done === 1) {
+      void playCompletionSound();
+    }
   },
 
   deleteSubtask: async (id) => {

@@ -2,13 +2,23 @@ import type { TimeBlock } from "../db/database";
 import { dayKey } from "../utils/time";
 import type { ToolCall } from "./aiClient";
 
-// A proposed change to time blocks that the user must approve before it applies.
+// Proposals/actions for any section of EasyTasky
 export type BlockProposal =
   | { kind: "addBlock"; block: Omit<TimeBlock, "id"> }
   | { kind: "updateBlock"; id: number; patch: Partial<Omit<TimeBlock, "id">> }
   | { kind: "deleteBlock"; id: number }
   | { kind: "createSection"; name: string; color?: string }
-  | { kind: "deleteSection"; name: string };
+  | { kind: "deleteSection"; name: string }
+  | { kind: "addTask"; task: { title: string; context?: string; energy?: string; quadrant?: string; due_date?: string; estimated_min?: number; note?: string; section_name?: string } }
+  | { kind: "updateTask"; find: string; patch: Record<string, unknown> }
+  | { kind: "deleteTask"; find: string }
+  | { kind: "completeTask"; find: string }
+  | { kind: "addSubtask"; taskFind: string; title: string }
+  | { kind: "toggleSubtask"; subtaskTitle: string }
+  | { kind: "addHabit"; habit: { title: string; habit_type?: string; target_value?: number; unit?: string; color?: string; freq?: string } }
+  | { kind: "logHabit"; find: string; value: number }
+  | { kind: "saveDailyNote"; day?: string; content: string }
+  | { kind: "updateUserProfile"; profile: string };
 
 // ---- helpers ----
 const toMin = (t: unknown): number | null => {
@@ -67,11 +77,81 @@ export const proposalsFromToolCalls = (calls: ToolCall[], blocks: TimeBlock[]): 
     } else if (c.name === "delete_section") {
       const name = typeof c.args.name === "string" ? c.args.name.trim() : "";
       if (name) proposals.push({ kind: "deleteSection", name });
+    } else if (c.name === "add_task") {
+      const title = typeof c.args.title === "string" ? c.args.title.trim() : "";
+      if (title) {
+        proposals.push({
+          kind: "addTask",
+          task: {
+            title,
+            context: typeof c.args.context === "string" ? c.args.context.trim() : undefined,
+            energy: typeof c.args.energy === "string" ? c.args.energy : undefined,
+            quadrant: typeof c.args.quadrant === "string" ? c.args.quadrant : undefined,
+            due_date: typeof c.args.due_date === "string" ? c.args.due_date : undefined,
+            estimated_min: typeof c.args.estimated_min === "number" ? c.args.estimated_min : undefined,
+            note: typeof c.args.note === "string" ? c.args.note : undefined,
+            section_name: typeof c.args.section_name === "string" ? c.args.section_name.trim() : undefined,
+          },
+        });
+      }
+    } else if (c.name === "update_task") {
+      const find = typeof c.args.find === "string" ? c.args.find.trim() : "";
+      if (find) {
+        const patch: Record<string, unknown> = {};
+        if (typeof c.args.title === "string") patch.title = c.args.title;
+        if (typeof c.args.status === "string") patch.status = c.args.status;
+        if (typeof c.args.due_date === "string") patch.due_date = c.args.due_date;
+        if (typeof c.args.energy === "string") patch.energy = c.args.energy;
+        if (typeof c.args.quadrant === "string") patch.quadrant = c.args.quadrant;
+        if (typeof c.args.estimated_min === "number") patch.estimated_min = c.args.estimated_min;
+        if (typeof c.args.actual_min === "number") patch.actual_min = c.args.actual_min;
+        if (typeof c.args.note === "string") patch.note = c.args.note;
+        proposals.push({ kind: "updateTask", find, patch });
+      }
+    } else if (c.name === "delete_task") {
+      const find = typeof c.args.find === "string" ? c.args.find.trim() : "";
+      if (find) proposals.push({ kind: "deleteTask", find });
+    } else if (c.name === "complete_task") {
+      const find = typeof c.args.find === "string" ? c.args.find.trim() : "";
+      if (find) proposals.push({ kind: "completeTask", find });
+    } else if (c.name === "add_subtask") {
+      const taskFind = typeof c.args.task_find === "string" ? c.args.task_find.trim() : "";
+      const title = typeof c.args.title === "string" ? c.args.title.trim() : "";
+      if (taskFind && title) proposals.push({ kind: "addSubtask", taskFind, title });
+    } else if (c.name === "toggle_subtask") {
+      const subtaskTitle = typeof c.args.subtask_title === "string" ? c.args.subtask_title.trim() : "";
+      if (subtaskTitle) proposals.push({ kind: "toggleSubtask", subtaskTitle });
+    } else if (c.name === "add_habit") {
+      const title = typeof c.args.title === "string" ? c.args.title.trim() : "";
+      if (title) {
+        proposals.push({
+          kind: "addHabit",
+          habit: {
+            title,
+            habit_type: typeof c.args.habit_type === "string" ? c.args.habit_type : undefined,
+            target_value: typeof c.args.target_value === "number" ? c.args.target_value : undefined,
+            unit: typeof c.args.unit === "string" ? c.args.unit : undefined,
+            color: typeof c.args.color === "string" ? c.args.color : undefined,
+            freq: typeof c.args.freq === "string" ? c.args.freq : undefined,
+          },
+        });
+      }
+    } else if (c.name === "log_habit") {
+      const find = typeof c.args.find === "string" ? c.args.find.trim() : "";
+      const value = typeof c.args.value === "number" ? c.args.value : 1;
+      if (find) proposals.push({ kind: "logHabit", find, value });
+    } else if (c.name === "save_daily_note") {
+      const content = typeof c.args.content === "string" ? c.args.content.trim() : "";
+      const day = typeof c.args.day === "string" ? c.args.day.trim() : undefined;
+      if (content) proposals.push({ kind: "saveDailyNote", content, day });
+    } else if (c.name === "update_user_profile") {
+      const profile = typeof c.args.profile === "string" ? c.args.profile.trim() : "";
+      if (profile) proposals.push({ kind: "updateUserProfile", profile });
     }
   }
 
   if (proposals.length === 0) {
-    return { proposals, note: "I couldn't match that request to an existing time block. Try naming the block or its time." };
+    return { proposals, note: "I could not process that action. Please check the details." };
   }
   return { proposals };
 };
@@ -82,7 +162,18 @@ export const describeProposal = (p: BlockProposal): string => {
   if (p.kind === "updateBlock") return `Edit block #${p.id}: ${Object.keys(p.patch).join(", ")}`;
   if (p.kind === "createSection") return `Create section "${p.name}"`;
   if (p.kind === "deleteSection") return `Delete section "${p.name}"`;
-  return `Delete block #${p.id}`;
+  if (p.kind === "deleteBlock") return `Delete block #${p.id}`;
+  if (p.kind === "addTask") return `Add task "${p.task.title}"`;
+  if (p.kind === "updateTask") return `Update task "${p.find}"`;
+  if (p.kind === "deleteTask") return `Delete task "${p.find}"`;
+  if (p.kind === "completeTask") return `Complete task "${p.find}"`;
+  if (p.kind === "addSubtask") return `Add subtask "${p.title}"`;
+  if (p.kind === "toggleSubtask") return `Toggle subtask "${p.subtaskTitle}"`;
+  if (p.kind === "addHabit") return `Add habit "${p.habit.title}"`;
+  if (p.kind === "logHabit") return `Log habit "${p.find}" (${p.value})`;
+  if (p.kind === "saveDailyNote") return `Save daily note`;
+  if (p.kind === "updateUserProfile") return `Update profile`;
+  return "Execute action";
 };
 
 export type AgentDef = {

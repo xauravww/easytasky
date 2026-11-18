@@ -41,10 +41,11 @@ export default function HabitDetailModal({ habit, onClose }: Props) {
   const [customUnit, setCustomUnit] = useState(habit.habit_unit || "times");
   const [targetVal, setTargetVal] = useState(String(habit.habit_target_value || 1));
 
-  const habitColor = habit.habit_color || ACCENT;
-  const isQuantity = habit.habit_type === "quantity";
-  const targetNumber = habit.habit_target_value || 1;
-  const unit = habit.habit_unit || (isQuantity ? "units" : "times");
+  const currentHabit = useStore((s) => s.tasks.find((t) => t.id === habit.id)) || habit;
+  const habitColor = currentHabit.habit_color || ACCENT;
+  const isQuantity = currentHabit.habit_type === "quantity" || (currentHabit.habit_target_value ?? 1) > 1;
+  const targetNumber = currentHabit.habit_target_value || 1;
+  const unit = currentHabit.habit_unit || (isQuantity ? "units" : "times");
 
   const today = dayKey();
   const checksForHabit = useMemo(
@@ -67,9 +68,11 @@ export default function HabitDetailModal({ habit, onClose }: Props) {
   // Save habit configuration changes
   const handleSaveConfig = async () => {
     const parsed = parseFloat(targetVal);
+    const validVal = isNaN(parsed) || parsed <= 0 ? 1 : parsed;
     await updateTask(habit.id, {
       habit_unit: customUnit.trim() || null,
-      habit_target_value: isNaN(parsed) || parsed <= 0 ? 1 : parsed,
+      habit_target_value: validVal,
+      habit_type: validVal > 1 ? "quantity" : habit.habit_type,
     });
     setEditingTarget(false);
   };
