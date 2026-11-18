@@ -58,14 +58,20 @@ export default function TasksScreen() {
   const [parsing, setParsing] = useState(false);
   const [parseErr, setParseErr] = useState("");
 
+  // Priority & Effort quick filter buttons
+  const [priorityFilter, setPriorityFilter] = useState<string | null>(null);
+  const [effortFilter, setEffortFilter] = useState<Task["energy"] | null>(null);
+
   const open = useMemo(() => tasks.filter((t) => t.status !== "done" && t.status !== "habit"), [tasks]);
   const matched = useMemo(() => {
     const q = query.trim().toLowerCase();
     let base = q ? open.filter((t) => t.title.toLowerCase().includes(q)) : open;
     if (taskFilter) base = base.filter((t) => t.quadrant === taskFilter);
     if (sectionFilter) base = base.filter((t) => t.section_id === sectionFilter);
+    if (priorityFilter) base = base.filter((t) => t.quadrant === priorityFilter);
+    if (effortFilter) base = base.filter((t) => t.energy === effortFilter);
     return base;
-  }, [open, query, taskFilter, sectionFilter]);
+  }, [open, query, taskFilter, sectionFilter, priorityFilter, effortFilter]);
 
   const handleCheckTask = (t: Task) => {
     const check = canCompleteTask(t.id);
@@ -168,11 +174,153 @@ export default function TasksScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search"
+            placeholder="Search tasks..."
             placeholderTextColor={TAB_IDLE}
             style={styles.searchInput}
           />
+          {query.length > 0 && (
+            <Pressable onPress={() => setQuery("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={TAB_IDLE} />
+            </Pressable>
+          )}
         </View>
+
+        {/* Quick Filter Bar (Priority & Effort with colored badges) */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.quickFilterScroll}
+          contentContainerStyle={styles.quickFilterContent}
+        >
+          {/* Priority Quick Filters */}
+          <Pressable
+            style={[
+              styles.smallFilterBtn,
+              priorityFilter === "urgent_important" && styles.smallFilterBtnActive,
+            ]}
+            onPress={() =>
+              setPriorityFilter(priorityFilter === "urgent_important" ? null : "urgent_important")
+            }
+          >
+            <View style={[styles.filterColorDot, { backgroundColor: RED }]} />
+            <Text
+              style={[
+                styles.smallFilterBtnText,
+                priorityFilter === "urgent_important" && styles.smallFilterBtnTextActive,
+              ]}
+            >
+              Do (Urgent)
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.smallFilterBtn,
+              priorityFilter === "not_urgent_important" && styles.smallFilterBtnActive,
+            ]}
+            onPress={() =>
+              setPriorityFilter(priorityFilter === "not_urgent_important" ? null : "not_urgent_important")
+            }
+          >
+            <View style={[styles.filterColorDot, { backgroundColor: "#3B82F6" }]} />
+            <Text
+              style={[
+                styles.smallFilterBtnText,
+                priorityFilter === "not_urgent_important" && styles.smallFilterBtnTextActive,
+              ]}
+            >
+              Schedule
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.smallFilterBtn,
+              priorityFilter === "urgent_not_important" && styles.smallFilterBtnActive,
+            ]}
+            onPress={() =>
+              setPriorityFilter(priorityFilter === "urgent_not_important" ? null : "urgent_not_important")
+            }
+          >
+            <View style={[styles.filterColorDot, { backgroundColor: AMBER }]} />
+            <Text
+              style={[
+                styles.smallFilterBtnText,
+                priorityFilter === "urgent_not_important" && styles.smallFilterBtnTextActive,
+              ]}
+            >
+              Delegate
+            </Text>
+          </Pressable>
+
+          {/* Effort Quick Filters */}
+          <Pressable
+            style={[
+              styles.smallFilterBtn,
+              effortFilter === "high" && styles.smallFilterBtnActive,
+            ]}
+            onPress={() => setEffortFilter(effortFilter === "high" ? null : "high")}
+          >
+            <View style={[styles.filterColorDot, { backgroundColor: RED }]} />
+            <Text
+              style={[
+                styles.smallFilterBtnText,
+                effortFilter === "high" && styles.smallFilterBtnTextActive,
+              ]}
+            >
+              High Effort
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.smallFilterBtn,
+              effortFilter === "medium" && styles.smallFilterBtnActive,
+            ]}
+            onPress={() => setEffortFilter(effortFilter === "medium" ? null : "medium")}
+          >
+            <View style={[styles.filterColorDot, { backgroundColor: AMBER }]} />
+            <Text
+              style={[
+                styles.smallFilterBtnText,
+                effortFilter === "medium" && styles.smallFilterBtnTextActive,
+              ]}
+            >
+              Med Effort
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.smallFilterBtn,
+              effortFilter === "low" && styles.smallFilterBtnActive,
+            ]}
+            onPress={() => setEffortFilter(effortFilter === "low" ? null : "low")}
+          >
+            <View style={[styles.filterColorDot, { backgroundColor: "#4CC3E8" }]} />
+            <Text
+              style={[
+                styles.smallFilterBtnText,
+                effortFilter === "low" && styles.smallFilterBtnTextActive,
+              ]}
+            >
+              Low Effort
+            </Text>
+          </Pressable>
+
+          {(priorityFilter || effortFilter) && (
+            <Pressable
+              style={styles.clearAllFilterBtn}
+              onPress={() => {
+                setPriorityFilter(null);
+                setEffortFilter(null);
+              }}
+            >
+              <Ionicons name="close-circle" size={14} color={TAB_IDLE} />
+              <Text style={styles.clearAllFilterText}>Clear</Text>
+            </Pressable>
+          )}
+        </ScrollView>
 
         {taskFilter && (
           <Pressable style={styles.filterChip} onPress={clearTaskFilter} accessibilityRole="button" accessibilityLabel="Clear filter">
@@ -378,6 +526,48 @@ const styles = StyleSheet.create({
   },
   searchWrap: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: SEARCH_BG, borderRadius: 14, paddingHorizontal: 14, height: 44, marginBottom: 8 },
   searchInput: { flex: 1, color: "#FFFFFF", fontSize: 15 },
+  quickFilterScroll: { marginBottom: 12 },
+  quickFilterContent: { gap: 8, alignItems: "center" },
+  smallFilterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#1E1E1E",
+    borderWidth: 1,
+    borderColor: LINE,
+  },
+  smallFilterBtnActive: {
+    backgroundColor: "#2A2A2A",
+    borderColor: ACCENT,
+  },
+  filterColorDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  smallFilterBtnText: {
+    color: TAB_IDLE,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  smallFilterBtnTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  clearAllFilterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  clearAllFilterText: {
+    color: TAB_IDLE,
+    fontSize: 12,
+  },
   filterChip: {
     flexDirection: "row",
     alignItems: "center",
