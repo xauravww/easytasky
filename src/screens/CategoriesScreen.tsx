@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -252,64 +253,6 @@ export default function CategoriesScreen({ onBack }: Props) {
         </View>
       </View>
 
-      {/* Add / Edit Form Modal or Inline Drawer */}
-      {showAddForm && (
-        <View style={styles.formContainer}>
-          <View style={styles.formHeader}>
-            <Text style={styles.formTitle}>{editingSec ? "Edit Category" : "New Category"}</Text>
-            <Pressable onPress={() => setShowAddForm(false)}>
-              <Ionicons name="close" size={20} color={SUB} />
-            </Pressable>
-          </View>
-
-          <TextInput
-            style={styles.formInput}
-            placeholder="Category name (e.g. Work, Health, EasyTasky)"
-            placeholderTextColor="#555555"
-            value={name}
-            onChangeText={setName}
-            autoFocus
-          />
-
-          <Text style={styles.colorPickerLabel}>Accent Color</Text>
-          <View style={styles.colorsGrid}>
-            {PRESET_COLORS.map((c) => (
-              <Pressable
-                key={c}
-                style={[
-                  styles.colorOption,
-                  { backgroundColor: c },
-                  color === c && styles.colorOptionSelected,
-                ]}
-                onPress={() => setColor(c)}
-              >
-                {color === c && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
-              </Pressable>
-            ))}
-          </View>
-
-          <View style={styles.formActions}>
-            <Pressable
-              style={styles.cancelBtn}
-              onPress={() => {
-                setShowAddForm(false);
-                setEditingSec(null);
-              }}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </Pressable>
-
-            <Pressable
-              style={[styles.saveBtn, !name.trim() && { opacity: 0.5 }]}
-              onPress={handleSave}
-              disabled={!name.trim()}
-            >
-              <Text style={styles.saveBtnText}>{editingSec ? "Save Changes" : "Create Category"}</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
       {/* Categories Virtualized List */}
       <FlatList
         data={filteredSections}
@@ -371,6 +314,92 @@ export default function CategoriesScreen({ onBack }: Props) {
           );
         }}
       />
+
+      {/* Add / Edit Category Bottom Drawer */}
+      <Modal
+        visible={showAddForm}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShowAddForm(false);
+          setEditingSec(null);
+        }}
+      >
+        <KeyboardAvoidingView
+          style={styles.drawerOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <Pressable
+            style={styles.drawerScrim}
+            onPress={() => {
+              setShowAddForm(false);
+              setEditingSec(null);
+            }}
+          />
+          <View style={[styles.drawerSheet, { paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
+            <View style={styles.drawerHandleBar} />
+            <View style={styles.drawerHeader}>
+              <Text style={styles.drawerTitle}>{editingSec ? "Edit Category" : "New Category"}</Text>
+              <Pressable
+                onPress={() => {
+                  setShowAddForm(false);
+                  setEditingSec(null);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={22} color={SUB} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.fieldLabel}>Category Name</Text>
+            <TextInput
+              style={styles.drawerInput}
+              placeholder="e.g. Work, Health, Personal, EasyTasky"
+              placeholderTextColor="#555555"
+              value={name}
+              onChangeText={setName}
+              autoFocus
+            />
+
+            <Text style={styles.fieldLabel}>Accent Color</Text>
+            <View style={styles.colorsGrid}>
+              {PRESET_COLORS.map((c) => (
+                <Pressable
+                  key={c}
+                  style={[
+                    styles.colorOption,
+                    { backgroundColor: c },
+                    color === c && styles.colorOptionSelected,
+                  ]}
+                  onPress={() => setColor(c)}
+                >
+                  {color === c && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={styles.drawerActions}>
+              <Pressable
+                style={styles.cancelBtn}
+                onPress={() => {
+                  setShowAddForm(false);
+                  setEditingSec(null);
+                }}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.saveBtn, !name.trim() && { opacity: 0.5 }]}
+                onPress={handleSave}
+                disabled={!name.trim()}
+              >
+                <Text style={styles.saveBtnText}>{editingSec ? "Save Changes" : "Create Category"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -499,85 +528,100 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#FFFFFF",
   },
-  formContainer: {
+  drawerOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  drawerScrim: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+  },
+  drawerSheet: {
     backgroundColor: CARD,
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 12,
-    borderRadius: 16,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
     borderColor: LINE,
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingTop: 12,
   },
-  formHeader: {
+  drawerHandleBar: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#3A3A3A",
+    alignSelf: "center",
+    marginBottom: 14,
+  },
+  drawerHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  formTitle: {
+  drawerTitle: {
     color: TEXT,
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: "700",
   },
-  formInput: {
-    backgroundColor: FIELD,
-    borderWidth: 1,
-    borderColor: LINE,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: TEXT,
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  colorPickerLabel: {
+  fieldLabel: {
     color: SUB,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
     marginBottom: 8,
   },
+  drawerInput: {
+    backgroundColor: FIELD,
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: TEXT,
+    fontSize: 15,
+    marginBottom: 18,
+  },
   colorsGrid: {
     flexDirection: "row",
-    gap: 10,
-    marginBottom: 16,
+    gap: 12,
+    marginBottom: 24,
   },
   colorOption: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
   },
   colorOptionSelected: {
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: "#FFFFFF",
   },
-  formActions: {
+  drawerActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
-    gap: 10,
+    gap: 12,
   },
   cancelBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 12,
     backgroundColor: FIELD,
   },
   cancelBtnText: {
     color: SUB,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
   },
   saveBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 12,
     backgroundColor: ACCENT,
   },
   saveBtnText: {
     color: "#FFFFFF",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
   },
   listContent: {
