@@ -299,26 +299,26 @@ export default function HabitDetailModal({ habit, onClose }: Props) {
 
           {/* Target Graph / Progress Bars (Today, Week, Month, Quarter, Year) */}
           <View style={styles.sectionBox}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Target Progress</Text>
-              <View style={styles.targetPeriodRow}>
-                {(["today", "week", "month", "quarter", "year"] as const).map((p) => (
-                  <Pressable
-                    key={p}
-                    style={[styles.periodTab, targetPeriod === p && styles.periodTabActive]}
-                    onPress={() => setTargetPeriod(p)}
+            <Text style={styles.sectionTitle}>Target Progress</Text>
+
+            {/* Dedicated full-width segmented tab row in its own block */}
+            <View style={styles.targetPeriodRow}>
+              {(["today", "week", "month", "quarter", "year"] as const).map((p) => (
+                <Pressable
+                  key={p}
+                  style={[styles.periodTab, targetPeriod === p && styles.periodTabActive]}
+                  onPress={() => setTargetPeriod(p)}
+                >
+                  <Text
+                    style={[
+                      styles.periodTabText,
+                      targetPeriod === p && styles.periodTabTextActive,
+                    ]}
                   >
-                    <Text
-                      style={[
-                        styles.periodTabText,
-                        targetPeriod === p && styles.periodTabTextActive,
-                      ]}
-                    >
-                      {p[0].toUpperCase() + p.slice(1)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+                    {p[0].toUpperCase() + p.slice(1)}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
 
             {/* Target Progress Bar & Numerical stats */}
@@ -581,21 +581,23 @@ const styles = StyleSheet.create({
   targetPeriodRow: {
     flexDirection: "row",
     backgroundColor: FIELD,
-    borderRadius: 10,
-    padding: 2,
-    gap: 2,
+    borderRadius: 12,
+    padding: 3,
+    width: "100%",
   },
   periodTab: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    borderRadius: 9,
   },
   periodTabActive: {
     backgroundColor: "#333333",
   },
   periodTabText: {
     color: SUB,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
   },
   periodTabTextActive: {
