@@ -17,6 +17,12 @@ export type BlockProposal =
   | { kind: "toggleSubtask"; subtaskTitle: string }
   | { kind: "addHabit"; habit: { title: string; habit_type?: string; target_value?: number; unit?: string; color?: string; freq?: string } }
   | { kind: "logHabit"; find: string; value: number }
+  | { kind: "deleteHabit"; find: string }
+  | { kind: "addShutdownRitual"; title: string }
+  | { kind: "deleteShutdownRitual"; find: string }
+  | { kind: "toggleShutdownRitual"; find: string }
+  | { kind: "startFocusTimer"; taskFind?: string; durationMin?: number }
+  | { kind: "stopFocusTimer"; action: "pause" | "reset" }
   | { kind: "saveDailyNote"; day?: string; content: string }
   | { kind: "updateUserProfile"; profile: string };
 
@@ -140,6 +146,25 @@ export const proposalsFromToolCalls = (calls: ToolCall[], blocks: TimeBlock[]): 
       const find = typeof c.args.find === "string" ? c.args.find.trim() : "";
       const value = typeof c.args.value === "number" ? c.args.value : 1;
       if (find) proposals.push({ kind: "logHabit", find, value });
+    } else if (c.name === "delete_habit") {
+      const find = typeof c.args.find === "string" ? c.args.find.trim() : "";
+      if (find) proposals.push({ kind: "deleteHabit", find });
+    } else if (c.name === "add_shutdown_ritual") {
+      const title = typeof c.args.title === "string" ? c.args.title.trim() : "";
+      if (title) proposals.push({ kind: "addShutdownRitual", title });
+    } else if (c.name === "delete_shutdown_ritual") {
+      const find = typeof c.args.find === "string" ? c.args.find.trim() : "";
+      if (find) proposals.push({ kind: "deleteShutdownRitual", find });
+    } else if (c.name === "toggle_shutdown_ritual") {
+      const find = typeof c.args.find === "string" ? c.args.find.trim() : "";
+      if (find) proposals.push({ kind: "toggleShutdownRitual", find });
+    } else if (c.name === "start_focus_timer") {
+      const taskFind = typeof c.args.task_find === "string" ? c.args.task_find.trim() : undefined;
+      const durationMin = typeof c.args.duration_min === "number" ? c.args.duration_min : undefined;
+      proposals.push({ kind: "startFocusTimer", taskFind, durationMin });
+    } else if (c.name === "stop_focus_timer") {
+      const action = c.args.action === "reset" ? "reset" : "pause";
+      proposals.push({ kind: "stopFocusTimer", action });
     } else if (c.name === "save_daily_note") {
       const content = typeof c.args.content === "string" ? c.args.content.trim() : "";
       const day = typeof c.args.day === "string" ? c.args.day.trim() : undefined;
@@ -171,6 +196,12 @@ export const describeProposal = (p: BlockProposal): string => {
   if (p.kind === "toggleSubtask") return `Toggle subtask "${p.subtaskTitle}"`;
   if (p.kind === "addHabit") return `Add habit "${p.habit.title}"`;
   if (p.kind === "logHabit") return `Log habit "${p.find}" (${p.value})`;
+  if (p.kind === "deleteHabit") return `Delete habit "${p.find}"`;
+  if (p.kind === "addShutdownRitual") return `Add shutdown ritual "${p.title}"`;
+  if (p.kind === "deleteShutdownRitual") return `Delete shutdown ritual "${p.find}"`;
+  if (p.kind === "toggleShutdownRitual") return `Toggle shutdown ritual "${p.find}"`;
+  if (p.kind === "startFocusTimer") return `Start focus timer${p.durationMin ? ` (${p.durationMin} min)` : ""}`;
+  if (p.kind === "stopFocusTimer") return `${p.action === "reset" ? "Reset" : "Pause"} focus timer`;
   if (p.kind === "saveDailyNote") return `Save daily note`;
   if (p.kind === "updateUserProfile") return `Update profile`;
   return "Execute action";

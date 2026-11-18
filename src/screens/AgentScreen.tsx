@@ -151,6 +151,16 @@ export default function AgentScreen() {
     if (note.trim()) {
       parts.push(`Today's note/journal:\n${note.trim()}`);
     }
+    if (state.shutdownRituals.length) {
+      const shownRituals = state.shutdownRituals.map((r) => {
+        const checked = state.shutdownChecks.some((c) => c.ritual_id === r.id && c.day === today);
+        return `- [${checked ? "x" : " "}] ${r.title}`;
+      });
+      parts.push(`Shutdown rituals (today):\n${shownRituals.join("\n")}`);
+    }
+    const pomo = state.pomo;
+    const taskRunning = pomo.taskId ? state.tasks.find((t) => t.id === pomo.taskId)?.title : undefined;
+    parts.push(`Focus Timer / Pomodoro: ${pomo.running ? `RUNNING (${pomo.mode}, ${Math.ceil(pomo.left / 60)} min left)` : "IDLE"}${taskRunning ? ` for task: "${taskRunning}"` : ""}`);
     return parts.join("\n\n");
   };
 
@@ -246,6 +256,52 @@ export default function AgentScreen() {
         if (h) {
           await state.logHabitValue(h.id, today, p.value);
           applied.push(`logged ${p.value} for habit "${h.title}"`);
+        }
+      } else if (p.kind === "deleteHabit") {
+        const h = state.tasks.find((x) => x.is_habit === 1 && x.title.toLowerCase().includes(p.find.toLowerCase()));
+        if (h) {
+          await state.deleteTask(h.id);
+          applied.push(`deleted habit "${h.title}"`);
+        }
+      } else if (p.kind === "addShutdownRitual") {
+        await state.addShutdownRitual(p.title);
+        applied.push(`added shutdown ritual "${p.title}"`);
+      } else if (p.kind === "deleteShutdownRitual") {
+        const rit = state.shutdownRituals.find((r) => r.title.toLowerCase().includes(p.find.toLowerCase()));
+        if (rit) {
+          await state.deleteShutdownRitual(rit.id);
+          applied.push(`deleted shutdown ritual "${rit.title}"`);
+        }
+      } else if (p.kind === "toggleShutdownRitual") {
+        const rit = state.shutdownRituals.find((r) => r.title.toLowerCase().includes(p.find.toLowerCase()));
+        if (rit) {
+          await state.toggleShutdownCheck(rit.id, today);
+          applied.push(`checked off shutdown ritual "${rit.title}"`);
+        }
+      } else if (p.kind === "startFocusTimer") {
+        if (p.durationMin) {
+          state.setFocusMin(p.durationMin);
+        }
+        if (p.taskFind) {
+          const t = state.tasks.find((x) => x.title.toLowerCase().includes(p.taskFind!.toLowerCase()));
+          if (t) {
+            state.startFocusFor(t.id);
+            applied.push(`started focus timer for "${t.title}"`);
+          } else {
+            state.startPomo();
+            applied.push(`started focus timer (${p.durationMin ?? 25} min)`);
+          }
+        } else {
+          state.startPomo();
+          applied.push(`started focus timer (${p.durationMin ?? 25} min)`);
+        }
+      } else if (p.kind === "stopFocusTimer") {
+        if (p.action === "reset") {
+          state.resetPomo();
+          applied.push(`reset focus timer`);
+        } else {
+          state.pausePomo();
+          applied.push(`paused focus timer`);
         }
       } else if (p.kind === "saveDailyNote") {
         const noteDay = p.day || today;

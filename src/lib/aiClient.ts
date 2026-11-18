@@ -465,6 +465,94 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "delete_habit",
+      description: "Delete an existing habit streak.",
+      parameters: {
+        type: "object",
+        properties: {
+          find: { type: "string", description: "Text matching the habit title to delete" },
+        },
+        required: ["find"],
+      },
+    },
+  },
+
+  // --- Shutdown Rituals ---
+  {
+    type: "function",
+    function: {
+      name: "add_shutdown_ritual",
+      description: "Add a new daily shutdown ritual / reflection prompt.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Title of the shutdown ritual step" },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_shutdown_ritual",
+      description: "Delete a shutdown ritual step.",
+      parameters: {
+        type: "object",
+        properties: {
+          find: { type: "string", description: "Text matching the ritual title" },
+        },
+        required: ["find"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "toggle_shutdown_ritual",
+      description: "Check off or toggle a shutdown ritual for today.",
+      parameters: {
+        type: "object",
+        properties: {
+          find: { type: "string", description: "Text matching the ritual title" },
+        },
+        required: ["find"],
+      },
+    },
+  },
+
+  // --- Pomodoro & Focus ---
+  {
+    type: "function",
+    function: {
+      name: "start_focus_timer",
+      description: "Start a focus timer / pomodoro for a task or general focus.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_find: { type: "string", description: "Optional task title to attach timer to" },
+          duration_min: { type: "number", description: "Duration in minutes (e.g. 25)" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "stop_focus_timer",
+      description: "Pause or reset the current focus timer.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["pause", "reset"], description: "Whether to pause or reset" },
+        },
+        required: ["action"],
+      },
+    },
+  },
 
   // --- Categories / Sections ---
   {
