@@ -12,19 +12,23 @@ EasyTasky is a high-performance, mobile-first task, habit, and time-planning app
 
 ## 📱 Visual App Tour
 
-Below is a direct tour of EasyTasky's core interface, captured from active mobile productivity sessions.
+Below is a direct tour of EasyTasky's core interface, captured from active mobile productivity sessions on Android.
 
-| 📋 Tasks & Matrix | 📂 Category Drawer | 🎙️ AI Agent Chat | 📞 Voice Call Mode |
+| 📋 Tasks & Matrix Priorities | 📂 Category & Section Drawer | 🎙️ AI Agent Chat & Actions | 📞 Real-Time Voice Call Mode |
 | :---: | :---: | :---: | :---: |
 | <img src="screenshots/feature_tasks.png" width="220" alt="Tasks Screen" /> | <img src="screenshots/feature_sidebar.png" width="220" alt="Category Sidebar" /> | <img src="screenshots/feature_agent.png" width="220" alt="AI Agent Companion" /> | <img src="screenshots/feature_call_mode.png" width="220" alt="Voice Call Mode" /> |
 
-| 🔥 Habit Streaks & Week Strip | 📊 52-Week Year Heatmap | ⏱️ Pomodoro Focus Dial | 📈 Performance Velocity |
+| 🔥 Habit Streaks & Week Strip | 📊 52-Week Year Heatmap | ⏱️ Pomodoro Focus Dial | 🏃 Live Stopwatch Session |
 | :---: | :---: | :---: | :---: |
-| <img src="screenshots/feature_habits.png" width="220" alt="Habits Screen" /> | <img src="screenshots/feature_habit_detail.png" width="220" alt="Annual Streak Heatmap" /> | <img src="screenshots/feature_focus.png" width="220" alt="Focus Timer" /> | <img src="screenshots/feature_review.png" width="220" alt="Review & Velocity" /> |
+| <img src="screenshots/feature_habits.png" width="220" alt="Habits Screen" /> | <img src="screenshots/feature_habit_detail.png" width="220" alt="Annual Streak Heatmap" /> | <img src="screenshots/feature_focus.png" width="220" alt="Focus Timer" /> | <img src="screenshots/feature_focus_running.png" width="220" alt="Live Focus Session" /> |
 
-| 🧭 4-Quadrant Eisenhower | ⏱️ Timebox & Buffer Schedule | 🌙 Shutdown Rituals | 📲 In-App Auto-Updater |
+| 📈 Performance & Velocity | 🗓️ 52-Week Review Heatmap | 🧭 4-Quadrant Eisenhower | ⏱️ Timebox & Buffer Schedule |
 | :---: | :---: | :---: | :---: |
-| <img src="screenshots/feature_eisenhower.png" width="220" alt="Eisenhower Matrix" /> | <img src="screenshots/feature_timebox.png" width="220" alt="Timeboxing Tool" /> | <img src="screenshots/feature_shutdown.png" width="220" alt="Shutdown Ritual" /> | <img src="screenshots/feature_updater.png" width="220" alt="In-App Auto-Updater" /> |
+| <img src="screenshots/feature_review.png" width="220" alt="Review & Velocity" /> | <img src="screenshots/feature_review_heatmap.png" width="220" alt="52-Week Velocity Heatmap" /> | <img src="screenshots/feature_eisenhower.png" width="220" alt="Eisenhower Matrix" /> | <img src="screenshots/feature_timebox.png" width="220" alt="Timeboxing Tool" /> |
+
+| 🎯 3-3-3 Focus Day Planner | 📓 Next-Day Notebook | 🌙 Evening Shutdown Ritual | 📲 In-App Auto-Updater |
+| :---: | :---: | :---: | :---: |
+| <img src="screenshots/feature_333_plan.png" width="220" alt="3-3-3 Focus Planner" /> | <img src="screenshots/feature_nextday_notebook.png" width="220" alt="Next-Day Notebook" /> | <img src="screenshots/feature_shutdown.png" width="220" alt="Shutdown Ritual" /> | <img src="screenshots/feature_updater.png" width="220" alt="In-App Auto-Updater" /> |
 
 ---
 
